@@ -31,6 +31,20 @@ module.exports = async function (req, res) {
     try { var r2 = await fetch(q.url + (q.url.indexOf('?') < 0 ? '?' : '&') + 'service=WMS&request=GetCapabilities'); var x = await r2.text(); out.status = r2.status; out.len = x.length;
       var re = /<Layer[^>]*>\s*<Name>([^<]*)<\/Name>\s*<Title>(?:<!\[CDATA\[)?([^<\]]*)/g, m, ls = []; while ((m = re.exec(x))) ls.push([m[1], m[2]]); out.layers = ls.slice(0, 40);
       out.crs3857 = x.indexOf('EPSG:3857') >= 0; out.access = (x.match(/<(Fees|AccessConstraints)>[^<]{0,300}/g) || []); } catch (e) { out.error = String(e); }
+  } else if (q.what === 'tiles') {
+    var list = [
+      'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/10/325/493.jpg',
+      'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/14/5200/7888.jpg',
+      'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/default/g/10/325/493.jpg',
+      'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/10/325/493.jpg',
+      'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/15/10400/15776.jpg',
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/' + new Date(Date.now() - 86400000).toISOString().slice(0, 10) + '/GoogleMapsCompatible_Level9/9/162/246.jpg',
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/' + new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10) + '/GoogleMapsCompatible_Level9/9/162/246.jpg'
+    ];
+    out.tiles = [];
+    for (var k = 0; k < list.length; k++) {
+      try { var rr = await fetch(list[k]); var bb = Buffer.from(await rr.arrayBuffer()); out.tiles.push([list[k].replace('https://', '').slice(0, 95), rr.status, rr.headers.get('content-type'), bb.length]); } catch (e) { out.tiles.push([list[k], String(e)]); }
+    }
   } else if (q.what === 'meteo') {
     var m = await j('https://api.open-meteo.com/v1/forecast?latitude=54.62&longitude=-6.41&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,precipitation,sunshine_duration&past_days=30&forecast_days=1&wind_speed_unit=mph&timezone=UTC');
     out.keys = Object.keys(m); out.units = m.hourly_units; out.n = m.hourly && m.hourly.time.length;
