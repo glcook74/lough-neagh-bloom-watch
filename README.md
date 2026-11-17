@@ -24,6 +24,8 @@ The map uses Leaflet with OpenStreetMap as the base map and the Geological Surve
 
 `api/lough.js` reads DAERA open data (Open Government Licence v3.0): the three monitoring buoys, confirmed blue-green algae locations and NI Water treatment works. `api/weather.js` also adds the last 30 days of weather from the Open-Meteo model archive. Satellite photos come from NASA GIBS. None of these need a key.
 
+`api/land.js` adds river basin outlines, the 2019 farm census by district electoral area and totals from DAERA's agricultural risk map. `api/fields.js` returns the individual scored fields for a small map area when the reader zooms in.
+
 ## Live forecast
 
 The Live forecast option uses the Met Office Weather DataHub (Global Spot, three-hourly). The API key is stored in Vercel as the environment variable `MET_OFFICE_API_KEY` and is never sent to the browser. Responses are cached for an hour to stay inside the free daily allowance.

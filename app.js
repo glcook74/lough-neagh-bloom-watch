@@ -33,6 +33,21 @@ var STAKE = [
 { n: 'Washing Bay', ll: [54.546, -6.586], zone: 'washing', type: 'bathing', note: 'Open water swimmers, and a DAERA monitoring buoy' },
 { n: 'Ardboe and Ballyronan', ll: [54.640, -6.505], zone: 'west', type: 'fishery', note: 'Fishing boats and Ballyronan Marina' }
 ];
+/* Phosphorus leaving each basin, AFBI modelling, 2021 reference year (provisional). */
+var BASIN_P = [
+{ k: /blackwater/i, kg: 1.16, t: 173 }, { k: /upper bann/i, kg: 1.08, t: 66 }, { k: /six\s?mile/i, kg: 1.05, t: 29 },
+{ k: /main/i, kg: 1.03, t: 74 }, { k: /lough neagh/i, kg: 0.98, t: 66 }, { k: /moyola/i, kg: 0.92, t: 29 },
+{ k: /ballinderry/i, kg: 0.85, t: 37 }, { k: /lower bann/i, kg: 0.85, t: 76, down: true }
+];
+var OCHRE = ['#f3e3b5', '#e3c26f', '#cf9b3a', '#a8701f', '#7a4a12'];
+var BLUES = ['#e3eef5', '#b9d3e6', '#86b2d3', '#4f8bba', '#1f5f93'];
+var RISK = { 1: ['Low', '#2c8a57'], 2: ['Medium', '#c97f00'], 3: ['High', '#bf3528'] };
+var GOTO = [['Antrim Bay', 54.712, -6.25], ['Ballyronan', 54.708, -6.52], ['Maghery', 54.515, -6.57], ['Kinnego', 54.496, -6.36]];
+function basinP(name) { for (var i = 0; i < BASIN_P.length; i++) if (BASIN_P[i].k.test(name || '')) return BASIN_P[i]; return null; }
+function ramp(v, lo, hi, cols) { var k = hi > lo ? (v - lo) / (hi - lo) : 0; return cols[Math.max(0, Math.min(cols.length - 1, Math.floor(k * cols.length)))]; }
+function nf(v) { return Math.round(v).toLocaleString('en-GB'); }
+function cattlePerHa(p) { return p.TotalAreaFarmedInHa > 0 ? p.TotalNumberofCattle / p.TotalAreaFarmedInHa : 0; }
+function farmRange() { var v = LAND.farms.features.map(function (f) { return cattlePerHa(f.properties); }); return [Math.min.apply(null, v), Math.max.apply(null, v)]; }
 var DO = {
 bathing: 'Signs up at the shore: no swimming or paddling, keep dogs out of the water.',
 intake: 'NI Water steps up testing of raw water at the intake.',
@@ -44,8 +59,8 @@ var LV = ['Low', 'Medium', 'High'];
 var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 var YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-var state = { scn: 'B', step: 0, day: 0, geo: 'sup', base: 'map', satDate: YESTERDAY };
-var DATA = null;
+var state = { scn: 'B', step: 0, day: 0, geo: 'sup', base: 'map', satDate: YESTERDAY, land: 'rivers' };
+var DATA = null, LAND = null;
 var cache = {};
 var LIVE = null;
 function run() {
@@ -108,6 +123,44 @@ if (bu.length) LAYERS.buoys = L.layerGroup(bu.map(function (b) {
 return L.marker([b.lat, b.lon], { title: b.name + ' buoy', alt: b.name + ' buoy', zIndexOffset: 300, icon: mk('<span class="bm">B</span>', 18) });
 }));
 }
+var fieldsLayer = null, fieldsKey = '', wasFields = false;
+function buildLand() {
+if (!MAP || !LAND) return;
+if (LAND.basins) LAYERS.basins = L.geoJSON(LAND.basins, {
+style: function (f) { var b = basinP(f.properties.NAME); return { color: '#ffffff', weight: 1.5, fillColor: b ? ramp(b.kg, 0.8, 1.2, OCHRE) : '#9aa3a8', fillOpacity: b ? 0.65 : 0.35 }; },
+onEachFeature: function (f, l) { var b = basinP(f.properties.NAME); l.bindPopup('<strong>' + esc(f.properties.NAME) + '</strong><br>' + (b ? b.kg.toFixed(2) + ' kg of phosphorus per hectare a year<br>' + b.t + ' tonnes a year in total' + (b.down ? '<br>Downstream of the lough' : '') : 'Drains elsewhere, not to the lough')); }
+});
+if (LAND.farms) { var fr = farmRange(); LAYERS.farms = L.geoJSON(LAND.farms, {
+style: function (f) { return { color: '#ffffff', weight: 1.5, fillColor: ramp(cattlePerHa(f.properties), fr[0], fr[1] + 0.0001, BLUES), fillOpacity: 0.7 }; },
+onEachFeature: function (f, l) { var p = f.properties; l.bindPopup('<strong>' + esc(String(p.DEAName).toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); })) + '</strong><br>' + cattlePerHa(p).toFixed(2) + ' cattle per hectare farmed<br>' + nf(p.TotalNumberofCattle) + ' cattle, ' + nf(p.TotalNumberofsheep) + ' sheep<br>' + nf(p.TotalNumberOfPigs) + ' pigs, ' + nf((p.TotalNumberOfPoultry000 || 0) * 1000) + ' poultry<br>' + nf(p.NumberOfFarms) + ' farms on ' + nf(p.TotalAreaFarmedInHa) + ' ha'); }
+}); }
+fieldsLayer = L.geoJSON(null, {
+style: function (f) { var c = (RISK[f.properties.ruleid] || RISK[1])[1]; return { color: c, weight: 0.7, fillColor: c, fillOpacity: 0.45 }; },
+onEachFeature: function (f, l) { var p = f.properties; l.bindPopup('<strong>' + esc(p.bh || 'Farmland') + '</strong><br>' + (RISK[p.ruleid] || ['Unknown'])[0] + ' risk of losing nutrients to water' + (p.hydoconnec ? '<br>Connected to a watercourse: ' + esc(String(p.hydoconnec).toLowerCase()) : '')); }
+});
+MAP.on('moveend', updateFields);
+}
+function updateFields() {
+if (!MAP || !fieldsLayer) return;
+var on = state.step === 2 && state.land === 'fields';
+showLayer(fieldsLayer, on);
+if (L.Browser.mobile) { if (on) MAP.dragging.enable(); else MAP.dragging.disable(); }
+if (!on) { if (wasFields) { wasFields = false; MAP.closePopup(); MAP.fitBounds(BOUNDS); } return; }
+wasFields = true;
+var say = function (txt) { var n = $('fieldNote'); if (n) n.textContent = txt; };
+if (MAP.getZoom() < 13) { fieldsLayer.clearLayers(); fieldsKey = ''; say('Zoom in closer to load the fields.'); return; }
+var b = MAP.getBounds(), g = 0.02;
+var key = [Math.floor(b.getWest() / g) * g, Math.floor(b.getSouth() / g) * g, Math.ceil(b.getEast() / g) * g, Math.ceil(b.getNorth() / g) * g].map(function (v) { return v.toFixed(2); }).join(',');
+if (key === fieldsKey) return;
+fieldsKey = key; say('Loading the fields.');
+fetch('/api/fields?bbox=' + key).then(function (res) { return res.json(); }).then(function (j) {
+if (key !== fieldsKey) return;
+fieldsLayer.clearLayers();
+if (!j || !j.ok) { say('The fields could not be loaded just now.'); return; }
+fieldsLayer.addData({ type: 'FeatureCollection', features: j.features });
+say(j.features.length ? j.features.length + ' fields shown' + (j.more ? ', which is all the map can load at once. Zoom in further to be sure of seeing every field.' : '. Tap one for its score.') : 'No scored farmland in this view.');
+}).catch(function () { if (key === fieldsKey) { fieldsKey = ''; say('The fields could not be loaded just now.'); } });
+}
 function showLayer(layer, on) {
 if (!MAP || !layer) return;
 if (on && !MAP.hasLayer(layer)) layer.addTo(MAP);
@@ -163,6 +216,47 @@ var H = top + rows.length * (rowH + gap);
 h += '<text class="ct" x="8" y="' + (H - 6) + '">30 days ago</text><text class="ct" x="332" y="' + (H - 6) + '" text-anchor="end">' + endLabel + '</text>';
 return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Water temperature, wind, rain and bloom index over the last 30 days">' + h + '</svg>';
 }
+function landSeg() {
+return '<div class="seg" role="group" aria-label="What to show on the map">' +
+[['rivers', 'River loads'], ['basins', 'Basins'], ['farms', 'Farming'], ['fields', 'Fields']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (state.land === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
+}
+function landPanel() {
+var h = '', m = state.land;
+if (!LAND) return '<p class="small">Loading the land data from DAERA. If this message stays, the service is not answering just now.</p>';
+if (m === 'basins') {
+if (!LAND.basins) return '<p class="small">The basin outlines could not be loaded just now.</p>';
+h += '<p>Each river drains its own basin. This shows how much phosphorus leaves every hectare of a basin in a year, so a basin that sheds a lot for its size stands out.</p><div class="bars">';
+BASIN_P.forEach(function (b, i) {
+var name = ['Blackwater', 'Upper Bann', 'Six Mile Water', 'Main', 'Lough shore streams', 'Moyola', 'Ballinderry', 'Lower Bann'][i];
+h += '<div class="bar"><span>' + name + '</span><span class="track"><span class="fill" style="display:block;width:' + (b.kg / 1.16 * 100).toFixed(0) + '%"></span></span><span class="val">' + b.kg.toFixed(2) + '</span></div>';
+});
+h += '</div><p class="small">Kilograms of phosphorus per hectare per year. AFBI modelling, 2021 reference year, provisional. The outlines are DAERA\'s Local Management Areas. The Blackwater basin carries on across the border and only the Northern Ireland part is drawn. The Lower Bann is downstream of the lough. Grey basins drain elsewhere. Tap a basin for its figures.</p>';
+} else if (m === 'farms') {
+if (!LAND.farms) return '<p class="small">The farm census could not be loaded just now.</p>';
+var T = { farms: 0, area: 0, crops: 0, grass: 0, cattle: 0, sheep: 0, pigs: 0, poultry: 0 };
+LAND.farms.features.forEach(function (f) { var p = f.properties; T.farms += p.NumberOfFarms || 0; T.area += p.TotalAreaFarmedInHa || 0; T.crops += p.TotalCrops || 0; T.grass += p.TotalGrassRGrazingHa || 0; T.cattle += p.TotalNumberofCattle || 0; T.sheep += p.TotalNumberofsheep || 0; T.pigs += p.TotalNumberOfPigs || 0; T.poultry += (p.TotalNumberOfPoultry000 || 0) * 1000; });
+var gp = T.grass + T.crops > 0 ? T.grass / (T.grass + T.crops) * 100 : 0;
+h += '<p>Of the land farmed around the lough, ' + gp.toFixed(0) + '% is grass and rough grazing and ' + (100 - gp).toFixed(0) + '% is crops. The map shades each area by how many cattle it has for every hectare farmed.</p>' +
+'<dl class="facts">' +
+'<div><dt>Farms</dt><dd>' + nf(T.farms) + '</dd></div><div><dt>Land farmed</dt><dd>' + nf(T.area) + ' ha</dd></div>' +
+'<div><dt>Cattle</dt><dd>' + nf(T.cattle) + '</dd></div><div><dt>Sheep</dt><dd>' + nf(T.sheep) + '</dd></div>' +
+'<div><dt>Pigs</dt><dd>' + nf(T.pigs) + '</dd></div><div><dt>Poultry</dt><dd>' + nf(T.poultry) + '</dd></div>' +
+'</dl><p class="small">DAERA farm census 2019, added up over the ' + LAND.farms.features.length + ' district electoral areas that touch the map. These follow council boundaries, not river basins, so some of this land drains elsewhere. Tap an area for its own figures.</p>';
+} else {
+var st = LAND.fieldStats || [], by = { 1: 0, 2: 0, 3: 0 }, tot = 0;
+st.forEach(function (x) { if (by[x.risk] != null) { by[x.risk] += x.ha; tot += x.ha; } });
+h += '<p>DAERA has scored each arable and improved grassland field for its risk of losing nutrients to water. The score uses slope, rainfall, soil, soil phosphorus and distance to a river, among other things.</p>';
+if (tot > 0) {
+h += '<div class="split" role="img" aria-label="Share of scored farmland at low, medium and high risk">' + [1, 2, 3].map(function (k) { return '<span style="width:' + (by[k] / tot * 100).toFixed(1) + '%;background:' + RISK[k][1] + '"></span>'; }).join('') + '</div>' +
+'<div class="legend">' + [1, 2, 3].map(function (k) { return '<span class="key"><span class="sw" style="background:' + RISK[k][1] + '"></span>' + RISK[k][0] + ' ' + (by[k] / tot * 100).toFixed(0) + '%, ' + nf(by[k]) + ' ha</span>'; }).join('') + '</div>';
+}
+h += '<h3>See the fields</h3><p class="small">Zoom in on the map and the individual fields appear. Or jump to:</p><div class="seg" role="group" aria-label="Jump to a place">' +
+GOTO.map(function (g, i) { return '<button type="button" id="goto_' + i + '" data-goto="' + i + '">' + g[0] + '</button>'; }).join('') + '<button type="button" id="goto_all" data-goto="all">Whole lough</button></div>' +
+'<p class="small" id="fieldNote" role="status">Zoom in closer to load the fields.</p>' +
+'<p class="small">Figures cover the area of the map. DAERA built this from the 2007 land cover map and 2015 water quality results, so it shows where risk sits, not how each field is farmed today. On a phone you can drag the map in this view.</p>';
+}
+return h;
+}
 function sceneHtml(r) {
 var s = state.step, h = '';
 if (s === 0) {
@@ -188,6 +282,8 @@ h += '<p>The coloured layer is the Geological Survey of Northern Ireland\'s 1:25
 '<li><strong>Zebra mussels</strong><span class="sub">First found in 2005 and now everywhere in the lough. They filter the water clear, so sunlight reaches deeper and algae grow faster.</span></li>' +
 '</ul>';
 } else if (s === 2) {
+h += landSeg();
+if (state.land !== 'rivers') { h += landPanel(); } else {
 var total = 0; RIVERS.forEach(function (rv) { total += rv.t; });
 h += '<p>Blue-green algae feed on phosphorus. This is how much each river is estimated to carry into the lough in a year. Bigger dots on the map mean bigger loads.</p><div class="bars">';
 RIVERS.concat([{ name: 'Smaller rivers', t: 66 }, { name: 'Straight into lough', t: 65 }]).forEach(function (rv) {
@@ -199,6 +295,7 @@ h += '</div><h3>Where it comes from</h3>' +
 '<div class="legend"><span class="key"><span class="sw" style="background:var(--low)"></span>Agriculture 61%</span><span class="key"><span class="sw" style="background:var(--water-ink)"></span>Wastewater 29%</span><span class="key"><span class="sw" style="background:var(--muted)"></span>Other 9%</span><span class="key"><span class="sw" style="background:var(--med)"></span>Septic tanks 1.3%</span></div>' +
 '<p class="small">AFBI modelling, 2021 reference year, tonnes of phosphorus. Provisional figures.</p>' +
 (DATA && DATA.works && DATA.works.length ? '<p class="small">The small grey dots on the map are ' + DATA.works.length + ' NI Water wastewater treatment works in the area shown, from NI Water\'s May 2024 list published by DAERA. Not all of them drain to the lough.</p>' : '');
+}
 } else if (s === 3) {
 h += '<p>These are the places and people a bloom hits first. In the model each one is tied to a stretch of shore, so a warning can name who needs to hear it.</p><ol class="list" style="list-style:none">';
 STAKE.forEach(function (st, i) {
@@ -296,13 +393,18 @@ if (i === s) b.setAttribute('aria-current', 'step'); else b.removeAttribute('ari
 });
 var risk = s >= 4;
 showLayer(GEO.sup, s === 1 && state.geo === 'sup'); showLayer(GEO.bed, s === 1 && state.geo === 'bed');
-showLayer(LAYERS.rivers, s === 2); showLayer(LAYERS.stake, s === 3);
+showLayer(LAYERS.rivers, s === 2 && state.land === 'rivers'); showLayer(LAYERS.stake, s === 3);
+showLayer(LAYERS.basins, s === 2 && state.land === 'basins'); showLayer(LAYERS.farms, s === 2 && state.land === 'farms');
+updateFields();
 showLayer(LAYERS.zones, risk); showLayer(LAYERS.wind, s === 4 || s === 5);
 showLayer(SAT, s === 0 && state.base === 'sat');
-showLayer(LAYERS.works, s === 2);
+showLayer(LAYERS.works, s === 2 && state.land === 'rivers');
 showLayer(LAYERS.algae, s === 4 && !!r.live); showLayer(LAYERS.buoys, s === 4 && !!r.live);
 var cap = '';
 if (s === 1) cap = state.geo === 'off' ? '<span>Base map: OpenStreetMap.</span>' : '<span>' + (state.geo === 'sup' ? 'Surface deposits' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>';
+else if (s === 2 && state.land === 'basins') cap = '<span>Phosphorus per hectare a year:</span><span class="key">0.8 kg ' + OCHRE.map(function (c) { return '<span class="sw" style="background:' + c + '"></span>'; }).join('') + ' 1.2 kg</span><span class="key"><span class="sw" style="background:#9aa3a8"></span>Drains elsewhere</span>';
+else if (s === 2 && state.land === 'farms') cap = LAND && LAND.farms ? '<span>Cattle per hectare farmed:</span><span class="key">' + farmRange()[0].toFixed(1) + ' ' + BLUES.map(function (c) { return '<span class="sw" style="background:' + c + '"></span>'; }).join('') + ' ' + farmRange()[1].toFixed(1) + '</span><span>Farm census 2019</span>' : '';
+else if (s === 2 && state.land === 'fields') cap = '<span>Risk of losing nutrients to water:</span>' + [1, 2, 3].map(function (k) { return '<span class="key"><span class="sw" style="background:' + RISK[k][1] + '"></span>' + RISK[k][0] + '</span>'; }).join('') + '<span>DAERA</span>';
 else if (s === 2) cap = '<span>Tonnes of phosphorus a year. Bigger dot, bigger load. Positions are approximate.</span>' + (LAYERS.works ? '<span class="key"><span class="sw dot" style="background:#5b6770"></span>Treatment works</span>' : '');
 else if (s === 3) cap = '<span class="key"><span class="sw" style="background:var(--high)"></span>Drinking water intake</span><span class="key"><span class="sw" style="background:var(--med)"></span>Fishing</span><span class="key"><span class="sw" style="background:var(--accent)"></span>Recreation</span>';
 else if (risk) cap = '<span class="key"><span class="sw" style="background:var(--low)"></span>L low</span><span class="key"><span class="sw" style="background:var(--med)"></span>M medium</span><span class="key"><span class="sw" style="background:var(--high)"></span>H high</span><span>' + (s === 4 ? 'Risk today' : s === 5 ? 'Risk on day ' + (state.day + 1) : 'Worst risk in the next 5 days') + '</span>' + (s === 4 && r.live && LAYERS.buoys ? '<span class="key"><span class="sw" style="background:#174a63"></span>B buoy</span>' : '') + (s === 4 && r.live && LAYERS.algae ? '<span class="key"><span class="sw dot" style="background:#b0206a"></span>Confirmed algae, last 12 months</span>' : '');
@@ -321,6 +423,13 @@ if (!window.fetch) return;
 fetch('/api/lough').then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) return;
 DATA = j; buildData(); render();
+}).catch(function () {});
+}
+function loadLand() {
+if (!window.fetch) return;
+fetch('/api/land').then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok) return;
+LAND = j; buildLand(); render();
 }).catch(function () {});
 }
 function loadLive() {
@@ -342,6 +451,8 @@ if (!t) return;
 if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; }
 else if (t.dataset.geo) state.geo = t.dataset.geo;
 else if (t.dataset.base) state.base = t.dataset.base;
+else if (t.dataset.land) state.land = t.dataset.land;
+else if (t.dataset.goto) { if (MAP) { if (t.dataset.goto === 'all') MAP.fitBounds(BOUNDS); else MAP.setView([GOTO[+t.dataset.goto][1], GOTO[+t.dataset.goto][2]], 13.5); } return; }
 else if (t.dataset.step != null) state.step = +t.dataset.step;
 else if (t.dataset.day != null) state.day = +t.dataset.day;
 else if (t.id === 'prevBtn') state.step = Math.max(0, state.step - 1);
@@ -361,6 +472,7 @@ if ($('satDate')) $('satDate').focus({ preventScroll: true });
 render();
 loadLive();
 loadData();
+loadLand();
 }
 start();
 })();
