@@ -12,7 +12,12 @@ This is a demonstration model. The lough facts are real. The weather and risk nu
 - `styles.css` - colours, fonts and layout
 - `model.js` - the illustrative bloom-risk model
 - `app.js` - the step-by-step walkthrough and charts
+- `api/weather.js` - fetches the live Met Office forecast on the server and returns daily averages
 
 There is no build step. Vercel serves these files as they are.
+
+## Live forecast
+
+The Live forecast option uses the Met Office Weather DataHub (Global Spot, three-hourly). The API key is stored in Vercel as the environment variable `MET_OFFICE_API_KEY` and is never sent to the browser. Responses are cached for an hour to stay inside the free daily allowance.
 
 Changes pushed to the `main` branch publish to the live site automatically.

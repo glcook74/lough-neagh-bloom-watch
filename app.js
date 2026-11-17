@@ -46,7 +46,17 @@ var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 var state = { scn: 'B', step: 0, day: 0 };
 var cache = {};
-function run() { return cache[state.scn] || (cache[state.scn] = runScenario(state.scn)); }
+var LIVE = null;
+function run() {
+if (state.scn === 'L' && !LIVE) state.scn = 'B';
+if (state.scn === 'L') return cache.L || (cache.L = runLive(LIVE));
+return cache[state.scn] || (cache[state.scn] = runScenario(state.scn));
+}
+var DAYN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+var MONN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+var COMPASS_SHORT = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+function fmtDate(iso) { var d = new Date(iso + 'T12:00:00Z'); return DAYN[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONN[d.getUTCMonth()]; }
+function compassShort(deg) { return COMPASS_SHORT[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 function $(id) { return document.getElementById(id); }
 function show(id, on) { var el = $(id); if (on) el.removeAttribute('hidden'); else el.setAttribute('hidden', ''); }
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
@@ -168,6 +178,16 @@ STAKE.forEach(function (st, i) {
 h += '<li><strong><span class="stepno">' + (i + 1) + '</span> ' + esc(st.n) + '</strong><span class="sub">' + esc(st.note) + '</span></li>';
 });
 h += '</ol>';
+} else if (s === 4 && r.live) {
+var lb = r.start.b, llv = level(lb), L = r.live;
+h += '<div class="readout"><span>Bloom index today</span><span class="badge l' + llv + '">' + lb.toFixed(2) + ' ' + LV[llv] + ', assumed</span></div>' +
+'<p>This is the real Met Office forecast for the middle of the lough. No live water readings are connected yet, so the model starts from an assumed low bloom level and a water temperature of ' + r.start.tw.toFixed(1) + ' °C, estimated from the air temperature.</p>' +
+'<div class="tablewrap"><table class="wx"><thead><tr><th scope="col" class="lh">Day</th><th scope="col">Air temp</th><th scope="col">Wind from</th><th scope="col">Rain</th></tr></thead><tbody>';
+[L.today].concat(L.days.slice(0, 5)).forEach(function (dy, i) {
+h += '<tr><th scope="row">' + (i === 0 ? 'Today' : fmtDate(dy.date)) + '</th><td>' + dy.t.toFixed(0) + ' °C</td><td>' + compassShort(dy.dir) + ' ' + Math.round(dy.w) + ' mph</td><td>' + dy.r.toFixed(1) + ' mm</td></tr>';
+});
+h += '</tbody></table></div>' +
+'<p class="small">Forecast data from the Met Office Weather DataHub' + (L.modelRunDate ? ', model run ' + String(L.modelRunDate).slice(11, 16) + ' UTC on ' + fmtDate(String(L.modelRunDate).slice(0, 10)) : '') + '. Daily figures are averaged from three-hourly values.' + (r.start.tw < 12 ? ' In this model algae do not grow in water below 12 °C, so a cold forecast keeps the risk low on every shore.' : '') + '</p>';
 } else if (s === 4) {
 var b = r.hist[29].b, lv = level(b);
 var story = { A: 'Cool air and a steady breeze keep the water mixed and below the temperature algae like. The index stays flat.',
@@ -192,7 +212,7 @@ h += '</tr>';
 h += '</tbody></table></div>';
 var w = o[state.day].wind, wide = 0, wz = 0;
 o[4].zones.forEach(function (c, i) { if (c.hi - c.lo > wide) { wide = c.hi - c.lo; wz = i; } });
-h += '<p><strong>Day ' + (state.day + 1) + ':</strong> wind from the ' + compass(w.dir) + ' at about ' + Math.round(w.w) + ' mph, pushing surface water towards the ' + compass(w.dir + 180) + ' shore.</p>' +
+h += '<p><strong>Day ' + (state.day + 1) + (r.live ? ', ' + fmtDate(r.live.days[state.day].date) : '') + ':</strong> wind from the ' + compass(w.dir) + ' at about ' + Math.round(w.w) + ' mph, pushing surface water towards the ' + compass(w.dir + 180) + ' shore.</p>' +
 '<p class="small">L, M and H are low, medium and high. The percentage is the chance of high risk, from 40 runs of the model with slightly different weather. Day 1 is tomorrow. The runs agree less the further out they go: at ' + ZONES[wz].name + ' the risk score ranges from ' + o[0].zones[wz].lo.toFixed(2) + ' to ' + o[0].zones[wz].hi.toFixed(2) + ' on day 1 and from ' + o[4].zones[wz].lo.toFixed(2) + ' to ' + o[4].zones[wz].hi.toFixed(2) + ' on day 5.</p>';
 } else {
 var items = [];
@@ -224,7 +244,7 @@ return h;
 /* ---------- render ---------- */
 function render() {
 var r = run(), s = state.step;
-['A', 'B', 'C'].forEach(function (k) { $('scn' + k).setAttribute('aria-pressed', String(k === state.scn)); });
+['A', 'B', 'C', 'L'].forEach(function (k) { $('scn' + k).setAttribute('aria-pressed', String(k === state.scn)); });
 Array.prototype.forEach.call($('steps').children, function (b, i) {
 if (i === s) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
 });
@@ -241,13 +261,23 @@ else if (s === 3) cap = '<span class="key"><span class="sw" style="background:va
 else if (risk) cap = '<span class="key"><span class="sw" style="background:var(--low)"></span>L low</span><span class="key"><span class="sw" style="background:var(--med)"></span>M medium</span><span class="key"><span class="sw" style="background:var(--high)"></span>H high</span><span>' + (s === 4 ? 'Risk today' : s === 5 ? 'Risk on day ' + (state.day + 1) : 'Worst risk in the next 5 days') + '</span>';
 else cap = '<span>Schematic map, north at the top. Not for navigation.</span>';
 $('mapcap').innerHTML = cap;
-if (s === 4) { paintZones(r.today.map(level)); setWind(r.wx[29]); }
+if (s === 4) { paintZones(r.today.map(level)); setWind(r.todayW || r.wx[29]); }
 if (s === 5) { paintZones(r.outlook[state.day].zones.map(function (c) { return c.lv; })); setWind(r.outlook[state.day].wind); }
 if (s === 6) {
 paintZones(ZONES.map(function (z, zi) { var m = 0; r.outlook.forEach(function (o) { m = Math.max(m, o.zones[zi].lv); }); return m; }));
 }
-$('panel').innerHTML = '<div><p class="stepno">Step ' + (s + 1) + ' of ' + STEPS.length + '</p><h2>' + STEPS[s] + '</h2></div>' + sceneHtml(r) +
+$('panel').innerHTML = '<div><p class="stepno">Step ' + (s + 1) + ' of ' + STEPS.length + '</p><h2>' + (s === 4 && r.live ? 'The lough today' : STEPS[s]) + '</h2></div>' + sceneHtml(r) +
 '<div class="nav"><button type="button" id="prevBtn" ' + (s === 0 ? 'disabled' : '') + '>Back</button><button type="button" class="next" id="nextBtn" ' + (s === STEPS.length - 1 ? 'disabled' : '') + '>' + (s === STEPS.length - 1 ? 'End' : 'Next: ' + STEPS[s + 1]) + '</button></div>';
+}
+function loadLive() {
+var note = $('liveNote'), btn = $('scnL');
+var fail = function () { note.textContent = 'The live forecast is not available right now. The three weather stories still work.'; };
+if (!window.fetch) { fail(); return; }
+fetch('/api/weather').then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok || !j.today || !j.days || j.days.length < 5) { fail(); return; }
+LIVE = j; btn.disabled = false;
+note.textContent = 'Live Met Office forecast loaded' + (j.modelRunDate ? ', model run ' + String(j.modelRunDate).slice(11, 16) + ' UTC on ' + fmtDate(String(j.modelRunDate).slice(0, 10)) : '') + '.';
+}).catch(fail);
 }
 function start() {
 $('steps').innerHTML = STEPS.map(function (t, i) { return '<button type="button" id="step' + i + '" data-step="' + i + '" aria-label="Step ' + (i + 1) + ': ' + t + '">' + (i + 1) + '</button>'; }).join('');
@@ -265,6 +295,7 @@ var id = t.id; render();
 if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
 });
 render();
+loadLive();
 }
 start();
 })();

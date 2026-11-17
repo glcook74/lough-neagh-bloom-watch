@@ -47,7 +47,10 @@ header { display: flex; flex-direction: column; gap: 8px; }
 .notice strong { font-weight: 600; }
 .controls { display: flex; flex-direction: column; gap: 12px; }
 .field-label { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
-.scn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.scn { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+@media (min-width: 560px) { .scn { grid-template-columns: repeat(4, 1fr); } }
+.scn button:disabled { opacity: 0.45; cursor: default; }
+#liveNote { margin-top: 6px; }
 .scn button { font: inherit; font-size: 0.82rem; font-weight: 500; line-height: 1.2; padding: 10px 6px; min-height: 52px;
 background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .scn button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
@@ -95,6 +98,11 @@ table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
 th, td { padding: 5px 3px; text-align: center; }
 th[scope="row"] { text-align: left; padding-left: 10px; font-weight: 500; white-space: nowrap; }
 thead th { padding-top: 8px; }
+table.wx th, table.wx td { padding: 8px 6px; }
+table.wx td { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.wx thead th { font-size: 0.76rem; font-weight: 600; color: var(--muted); padding-bottom: 6px; }
+table.wx tbody tr { border-top: 1px solid var(--line); }
+th.lh { text-align: left; padding-left: 10px; }
 thead button { font-family: var(--mono); font-size: 0.74rem; width: 100%; min-height: 38px; padding: 4px 2px; background: transparent;
 color: var(--muted); border: 1px solid transparent; border-radius: 6px; cursor: pointer; line-height: 1.2; }
 thead button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }

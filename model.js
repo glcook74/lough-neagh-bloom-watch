@@ -96,16 +96,19 @@ s = step(s, wx[d]);
 hist.push({ tw: s.tw, n: s.n, b: s.b, scum: s.scum });
 }
 var today = ZONES.map(function (z) { return zoneRisk(z, s.scum, wx[29].dir, wx[28].dir); });
+return { key: key, wx: wx, hist: hist, today: today, outlook: outlookFrom(s, wx.slice(30, 35), wx[29].dir, key.charCodeAt(0) * 97) };
+}
 /* 5-day outlook: 40 members, weather error grows with lead time. */
-var rand = mulberry32(key.charCodeAt(0) * 97);
+function outlookFrom(s, next5, prevDir0, seed) {
+var rand = mulberry32(seed);
 var M = 40, out = [];
 for (var k = 0; k < 5; k++) out.push(ZONES.map(function () { return []; }));
 var bSeries = [[], [], [], [], []];
 for (var m = 0; m < M; m++) {
 var ms = { tw: s.tw, n: s.n, b: s.b };
-var prevDir = wx[29].dir;
+var prevDir = prevDir0;
 for (var k4 = 0; k4 < 5; k4++) {
-var base = wx[30 + k4], lead = k4 + 1;
+var base = next5[k4], lead = k4 + 1;
 var pw = {
 t: base.t + gauss(rand) * 0.5 * lead,
 w: Math.max(0.5, base.w + gauss(rand) * 0.9 * lead),
@@ -120,9 +123,9 @@ prevDir = pw.dir;
 }
 }
 var q = function (arr, p) { var a = arr.slice().sort(function (x, y) { return x - y; }); return a[Math.min(a.length - 1, Math.floor(p * a.length))]; };
-var outlook = out.map(function (dayArr, k5) {
+return out.map(function (dayArr, k5) {
 return {
-wind: wx[30 + k5],
+wind: next5[k5],
 bMid: q(bSeries[k5], 0.5), bLo: q(bSeries[k5], 0.1), bHi: q(bSeries[k5], 0.9),
 zones: dayArr.map(function (arr) {
 var pHigh = arr.filter(function (v) { return v >= 0.5; }).length / arr.length;
@@ -132,5 +135,12 @@ return { lv: lv, pHigh: pHigh, pMed: pMed, lo: q(arr, 0.1), mid: q(arr, 0.5), hi
 })
 };
 });
-return { key: key, wx: wx, hist: hist, today: today, outlook: outlook };
+}
+/* Live mode: real Met Office forecast, assumed starting state for the lough. */
+function runLive(live) {
+var d0 = live.today, days = live.days.slice(0, 5);
+var s = { tw: Math.max(0, d0.t - 2.5), n: 0.55, b: 0.06 };
+var calm = d0.w <= 5 ? 1 : Math.max(0.2, 1 - (d0.w - 5) / 12);
+var today = ZONES.map(function (z) { return zoneRisk(z, s.b * calm, d0.dir, d0.dir); });
+return { key: 'L', live: live, wx: null, hist: null, start: s, todayW: d0, today: today, outlook: outlookFrom(s, days, d0.dir, 4711) };
 }

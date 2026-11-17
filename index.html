@@ -16,16 +16,18 @@
 <p class="eyebrow">Lough Neagh · blue-green algae</p>
 <h1>Bloom Watch</h1>
 <p class="lede">How weather, water and what flows in off the land combine to turn the lough green, and which shore the wind will push it to next.</p>
-<p class="notice"><strong>Demonstration model.</strong> The lough facts are real. The weather and risk numbers are made up to show how a forecast could work. Do not use this page to decide if the water is safe.</p>
+<p class="notice"><strong>Demonstration model.</strong> The lough facts are real. The three weather stories are made up, and the live option uses the real Met Office forecast. Either way the bloom risk scores are an untested illustration. Do not use this page to decide if the water is safe.</p>
 </header>
 <section class="controls" aria-label="Controls">
 <div>
-<p class="field-label" id="scnLabel">Choose the last 30 days of weather</p>
+<p class="field-label" id="scnLabel">Choose a weather story, or the live forecast</p>
 <div class="scn" role="group" aria-labelledby="scnLabel">
 <button type="button" id="scnA" data-scn="A">Cool and breezy</button>
 <button type="button" id="scnB" data-scn="B">Wet, then hot and calm</button>
 <button type="button" id="scnC" data-scn="C">Downpour, then heat</button>
+<button type="button" id="scnL" data-scn="L" disabled>Live forecast</button>
 </div>
+<p class="small" id="liveNote" role="status">Loading the live Met Office forecast.</p>
 </div>
 <nav class="steps" id="steps" aria-label="Steps"></nav>
 </section>
@@ -82,7 +84,7 @@
 <footer>
 <h3>Turning this into a real forecast</h3>
 <ul>
-<li>Swap the made-up weather for live Met Office observations and forecasts.</li>
+<li>Add Met Office observations for the past 30 days. The forecast for the next 5 days is already live.</li>
 <li>Feed in real water readings. DAERA has monitoring buoys at Rea's Wood and Washing Bay and gauges on the six main rivers.</li>
 <li>Add satellite images of the lough surface to see where blooms are today.</li>
 <li>Check the model against what happened in the 2023 to 2026 blooms, then tune it until it would have called them.</li>
@@ -92,6 +94,7 @@
 <li>Lough size, depth, shoreline and flushing time: Lough Neagh Partnership facts flyer.</li>
 <li>Phosphorus by river and by source: AFBI modelling for the NEW Harmonica project, 2021 reference year, shared by DAERA in June 2025 and still under review at the time.</li>
 <li>Zebra mussels, water clarity and sediment phosphorus: AFBI and DAERA statements, 2023 and 2024.</li>
+<li>Live forecast: Met Office Weather DataHub, Global Spot three-hourly forecast for the centre of the lough.</li>
 <li>Geology and depth bands on the map are simplified sketches.</li>
 </ul>
 </footer>
