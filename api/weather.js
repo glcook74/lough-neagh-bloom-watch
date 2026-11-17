@@ -50,11 +50,15 @@ function summarise(date, steps) {
 }
 
 module.exports = async function (req, res) {
-  var key = process.env.MET_OFFICE_API_KEY;
+  /* Remove any spaces or line breaks picked up when the key was pasted. */
+  var key = (process.env.MET_OFFICE_API_KEY || '').replace(/\s+/g, '');
   if (!key) { res.setHeader('Cache-Control', 'no-store'); res.status(503).json({ ok: false, error: 'not_configured' }); return; }
   try {
     var r = await fetch(SOURCE, { headers: { apikey: key, accept: 'application/json' } });
     if (!r.ok) {
+      var why = '';
+      try { why = (await r.text()).slice(0, 300); } catch (e) {}
+      console.warn('Met Office refused the request', r.status, 'key length', key.length, 'token-shaped', /^eyJ/.test(key) && key.split('.').length === 3, why);
       res.setHeader('Cache-Control', 'public, s-maxage=60');
       res.status(502).json({ ok: false, error: 'met_office_refused', status: r.status });
       return;
