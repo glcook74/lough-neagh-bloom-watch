@@ -139,8 +139,18 @@ return { lv: lv, pHigh: pHigh, pMed: pMed, lo: q(arr, 0.1), mid: q(arr, 0.5), hi
 /* Live mode: real Met Office forecast, assumed starting state for the lough. */
 function runLive(live) {
 var d0 = live.today, days = live.days.slice(0, 5);
-var s = { tw: Math.max(0, d0.t - 2.5), n: 0.55, b: 0.06 };
+var past = live.past && live.past.length === 30 ? live.past : null;
+var s, hist = null;
+if (past) {
+/* Run the model over the real weather of the last 30 days. Only the starting bloom level is assumed. */
+s = { tw: Math.max(0, past[0].t - 2.5), n: 0.55, b: 0.06 }; hist = [];
+past.forEach(function (w) { s = step(s, w); hist.push({ tw: s.tw, n: s.n, b: s.b, scum: s.scum }); });
+s = { tw: s.tw, n: s.n, b: s.b };
+} else {
+s = { tw: Math.max(0, d0.t - 2.5), n: 0.55, b: 0.06 };
+}
 var calm = d0.w <= 5 ? 1 : Math.max(0.2, 1 - (d0.w - 5) / 12);
-var today = ZONES.map(function (z) { return zoneRisk(z, s.b * calm, d0.dir, d0.dir); });
-return { key: 'L', live: live, wx: null, hist: null, start: s, todayW: d0, today: today, outlook: outlookFrom(s, days, d0.dir, 4711) };
+var prev = past ? past[29].dir : d0.dir;
+var today = ZONES.map(function (z) { return zoneRisk(z, s.b * calm, d0.dir, prev); });
+return { key: 'L', live: live, wx: past, hist: hist, start: s, todayW: d0, today: today, outlook: outlookFrom(s, days, d0.dir, 4711) };
 }

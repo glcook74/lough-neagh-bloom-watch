@@ -49,10 +49,36 @@ function summarise(date, steps) {
   };
 }
 
+/* The last 30 full days of weather for the same point, from the Open-Meteo weather model archive. */
+var PAST = 'https://api.open-meteo.com/v1/forecast?latitude=' + LAT + '&longitude=' + LON +
+  '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,precipitation,sunshine_duration&past_days=31&forecast_days=1&wind_speed_unit=mph&timezone=UTC';
+async function pastWeather() {
+  var r = await fetch(PAST);
+  if (!r.ok) throw new Error('status ' + r.status);
+  var h = (await r.json()).hourly;
+  var todayStr = new Date().toISOString().slice(0, 10), by = {};
+  h.time.forEach(function (tm, i) {
+    var d = tm.slice(0, 10);
+    if (d >= todayStr) return;
+    var o = by[d] = by[d] || { t: 0, n: 0, w: 0, vx: 0, vy: 0, r: 0, s: 0 };
+    var t = num(h.temperature_2m[i]), w = num(h.wind_speed_10m[i]), dir = num(h.wind_direction_10m[i]);
+    if (t == null || w == null || dir == null) return;
+    o.t += t; o.w += w; o.n++;
+    o.vx += w * Math.sin(dir * Math.PI / 180); o.vy += w * Math.cos(dir * Math.PI / 180);
+    o.r += num(h.precipitation[i]) || 0; o.s += num(h.sunshine_duration[i]) || 0;
+  });
+  var days = Object.keys(by).sort().filter(function (d) { return by[d].n >= 20; }).slice(-30).map(function (d) {
+    var o = by[d];
+    return { date: d, t: +(o.t / o.n).toFixed(1), w: +(o.w / o.n).toFixed(1), dir: Math.round((Math.atan2(o.vx, o.vy) * 180 / Math.PI + 360) % 360), r: +o.r.toFixed(1), s: +(o.s / 3600).toFixed(1) };
+  });
+  return days.length === 30 ? days : null;
+}
+
 module.exports = async function (req, res) {
   /* Remove any spaces or line breaks picked up when the key was pasted. */
   var key = (process.env.MET_OFFICE_API_KEY || '').replace(/\s+/g, '');
   if (!key) { res.setHeader('Cache-Control', 'no-store'); res.status(503).json({ ok: false, error: 'not_configured' }); return; }
+  var pastP = pastWeather().catch(function (e) { console.warn('Past weather failed:', String(e)); return null; });
   try {
     var r = await fetch(SOURCE, { headers: { apikey: key, accept: 'application/json' } });
     if (!r.ok) {
@@ -96,7 +122,9 @@ module.exports = async function (req, res) {
       modelRunDate: (f.properties && f.properties.modelRunDate) || null,
       fetchedAt: new Date().toISOString(),
       today: today,
-      days: days
+      days: days,
+      past: await pastP,
+      pastSource: 'Open-Meteo weather model archive (open-meteo.com), CC BY 4.0'
     });
   } catch (e) {
     res.setHeader('Cache-Control', 'public, s-maxage=60');

@@ -89,6 +89,10 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .seg button { font: inherit; font-size: 0.82rem; font-weight: 500; flex: 1 1 auto; min-height: 40px; padding: 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.bm { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 3px; background: var(--m-water); border: 2px solid #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); font-family: var(--mono); font-size: 10px; font-weight: 500; color: #ffffff; }
+.sw.dot { border-radius: 50%; }
+.satrow { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
+.satrow input { font: inherit; padding: 8px 10px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .legendbox summary { cursor: pointer; font-size: 0.86rem; font-weight: 600; padding: 6px 0; }
 .legendimg { background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 320px; overflow: auto; }
 .legendimg img { display: block; max-width: none; }

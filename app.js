@@ -43,7 +43,9 @@ var STEPS = ['The lough', 'Beneath the surface', 'What flows in', 'What is at st
 var LV = ['Low', 'Medium', 'High'];
 var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
-var state = { scn: 'B', step: 0, day: 0, geo: 'sup' };
+var YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+var state = { scn: 'B', step: 0, day: 0, geo: 'sup', base: 'map', satDate: YESTERDAY };
+var DATA = null;
 var cache = {};
 var LIVE = null;
 function run() {
@@ -60,7 +62,7 @@ function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 function zoneById(id) { for (var i = 0; i < ZONES.length; i++) if (ZONES[i].id === id) return i; return -1; }
 /* ---------- map ---------- */
-var MAP = null, GEO = {}, LAYERS = {}, zoneMarkers = {}, windMarker = null;
+var MAP = null, GEO = {}, LAYERS = {}, zoneMarkers = {}, windMarker = null, SAT = null;
 function mk(html, size) { return L.divIcon({ html: html, className: 'mk', iconSize: [size, size], iconAnchor: [size / 2, size / 2] }); }
 function zoneIcon(z, lv) { return mk('<span class="zm l' + lv + '">' + LV[lv].charAt(0) + '</span><span class="zlab ' + ZPOS[z.id][1] + '">' + z.short + '</span>', 22); }
 function windIcon(toward) {
@@ -88,8 +90,23 @@ return L.marker(s.ll, { title: s.n, alt: s.n, icon: mk('<span class="sm ' + s.ty
 LAYERS.zones = L.layerGroup(ZONES.map(function (z) {
 return (zoneMarkers[z.id] = L.marker(ZPOS[z.id][0], { title: z.name, alt: z.name, icon: zoneIcon(z, 0) }));
 }));
+SAT = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg', { date: state.satDate, maxNativeZoom: 9, maxZoom: 15, attribution: 'Satellite imagery: NASA EOSDIS GIBS' });
 windMarker = L.marker(CENTRE, { interactive: false, keyboard: false, zIndexOffset: -500, icon: windIcon(0) });
 LAYERS.wind = L.layerGroup([windMarker]);
+}
+function buildData() {
+if (!MAP || !DATA) return;
+var yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+if (DATA.works && DATA.works.length) LAYERS.works = L.layerGroup(DATA.works.map(function (w) {
+return L.circleMarker([w.lat, w.lon], { radius: 3.5, color: '#ffffff', weight: 1, fillColor: '#5b6770', fillOpacity: 0.9 }).bindTooltip(w.name + (w.into ? ', into ' + w.into : ''));
+}));
+if (DATA.algae) LAYERS.algae = L.layerGroup(DATA.algae.filter(function (a) { return a.date >= yearAgo; }).map(function (a) {
+return L.circleMarker([a.lat, a.lon], { radius: 5, color: '#ffffff', weight: 1.5, fillColor: '#b0206a', fillOpacity: 0.9 }).bindTooltip(a.name + ', confirmed ' + fmtDate(a.date) + ' ' + a.date.slice(0, 4));
+}));
+var bu = (DATA.buoys || []).filter(function (b) { return b.lat != null; });
+if (bu.length) LAYERS.buoys = L.layerGroup(bu.map(function (b) {
+return L.marker([b.lat, b.lon], { title: b.name + ' buoy', alt: b.name + ' buoy', zIndexOffset: 300, icon: mk('<span class="bm">B</span>', 18) });
+}));
 }
 function showLayer(layer, on) {
 if (!MAP || !layer) return;
@@ -105,7 +122,8 @@ if (!MAP) return;
 windMarker.setIcon(windIcon((w.dir + 180) % 360));
 }
 /* ---------- scene panels ---------- */
-function chart30(r) {
+function chart30(r, endLabel) {
+endLabel = endLabel || 'today';
 var W = 340, x = function (i) { return 8 + i * (324 / 29); };
 var rows = [
 { label: 'Water temperature', unit: '°C', get: function (d, i) { return r.hist[i].tw; }, min: 10, max: 22, kind: 'line', dec: 1 },
@@ -116,11 +134,13 @@ var rows = [
 var rowH = 40, gap = 24, top = 14, h = '';
 rows.forEach(function (row, k) {
 var y0 = top + k * (rowH + gap), yb = y0 + rowH;
-var y = function (v) { return yb - (Math.max(row.min, Math.min(row.max, v)) - row.min) / (row.max - row.min) * rowH; };
 var vals = []; for (var i = 0; i < 30; i++) vals.push(row.get(r.wx[i], i));
+var lo = row.kind === 'line' ? Math.min(row.min, Math.floor(Math.min.apply(null, vals)) - 1) : row.min;
+var hi = row.kind === 'area' ? row.max : Math.max(row.max, Math.ceil(Math.max.apply(null, vals)));
+var y = function (v) { return yb - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * rowH; };
 var last = vals[29];
 h += '<text class="ct strong" x="8" y="' + (y0 - 4) + '">' + row.label + '</text>';
-h += '<text class="ct" x="332" y="' + (y0 - 4) + '" text-anchor="end">today ' + last.toFixed(row.dec) + (row.unit ? ' ' + row.unit : '') + '</text>';
+h += '<text class="ct" x="332" y="' + (y0 - 4) + '" text-anchor="end">' + endLabel + ' ' + last.toFixed(row.dec) + (row.unit ? ' ' + row.unit : '') + '</text>';
 h += '<line x1="8" y1="' + yb + '" x2="332" y2="' + yb + '" stroke="var(--line)" stroke-width="1"/>';
 if (row.guide != null) {
 h += '<line x1="8" y1="' + y(row.guide) + '" x2="332" y2="' + y(row.guide) + '" stroke="var(--muted)" stroke-width="0.8" stroke-dasharray="3 3"/>';
@@ -140,7 +160,7 @@ h += '<circle cx="' + x(29) + '" cy="' + y(last) + '" r="3" fill="' + (row.kind 
 }
 });
 var H = top + rows.length * (rowH + gap);
-h += '<text class="ct" x="8" y="' + (H - 6) + '">30 days ago</text><text class="ct" x="332" y="' + (H - 6) + '" text-anchor="end">today</text>';
+h += '<text class="ct" x="8" y="' + (H - 6) + '">30 days ago</text><text class="ct" x="332" y="' + (H - 6) + '" text-anchor="end">' + endLabel + '</text>';
 return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Water temperature, wind, rain and bloom index over the last 30 days">' + h + '</svg>';
 }
 function sceneHtml(r) {
@@ -151,7 +171,12 @@ h += '<p>Lough Neagh is big, shallow and slow to empty. Those three things expla
 '<div><dt>Surface area</dt><dd>383 km²</dd></div><div><dt>Average depth</dt><dd>9 m</dd></div>' +
 '<div><dt>Shoreline</dt><dd>about 125 km</dd></div><div><dt>Share of NI that drains into it</dt><dd>42%</dd></div>' +
 '<div><dt>Time water stays in the lough</dt><dd>16 months</dd></div><div><dt>Share of NI drinking water</dt><dd>about 40%</dd></div>' +
-'</dl><p class="small">Six main rivers flow in. Only one, the Lower Bann at Toome, flows out.</p>';
+'</dl><p class="small">Six main rivers flow in. Only one, the Lower Bann at Toome, flows out.</p>' +
+'<h3>See it from space</h3>' +
+'<div class="seg" role="group" aria-label="Map view">' +
+[['map', 'Map'], ['sat', 'Satellite photo']].map(function (g) { return '<button type="button" id="base_' + g[0] + '" data-base="' + g[0] + '" aria-pressed="' + (state.base === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>' +
+(state.base === 'sat' ? '<p class="satrow"><label for="satDate">Photo date</label> <input type="date" id="satDate" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '"></p>' +
+'<p class="small">A daily photo from NASA\'s Terra satellite. Each dot of the picture covers about 250 metres, so it shows the whole lough but no fine detail. Cloud often hides the lough, so try other dates. A strong bloom shows as green swirls in the water.</p>' : '');
 } else if (s === 1) {
 h += '<p>The coloured layer is the Geological Survey of Northern Ireland\'s 1:250,000 map. Where the surface is clay or peat, rain drains poorly and runs off the fields quickly, taking phosphorus with it.</p>' +
 '<div class="seg" role="group" aria-label="Geology layer">' +
@@ -172,7 +197,8 @@ h += '</div><h3>Where it comes from</h3>' +
 '<div class="split" role="img" aria-label="Agriculture 61 percent, wastewater 29 percent, other 9 percent, septic tanks 1.3 percent">' +
 '<span style="width:61%;background:var(--low)"></span><span style="width:29%;background:var(--water-ink)"></span><span style="width:9%;background:var(--muted)"></span><span style="width:1.3%;background:var(--med)"></span></div>' +
 '<div class="legend"><span class="key"><span class="sw" style="background:var(--low)"></span>Agriculture 61%</span><span class="key"><span class="sw" style="background:var(--water-ink)"></span>Wastewater 29%</span><span class="key"><span class="sw" style="background:var(--muted)"></span>Other 9%</span><span class="key"><span class="sw" style="background:var(--med)"></span>Septic tanks 1.3%</span></div>' +
-'<p class="small">AFBI modelling, 2021 reference year, tonnes of phosphorus. Provisional figures.</p>';
+'<p class="small">AFBI modelling, 2021 reference year, tonnes of phosphorus. Provisional figures.</p>' +
+(DATA && DATA.works && DATA.works.length ? '<p class="small">The small grey dots on the map are ' + DATA.works.length + ' NI Water wastewater treatment works that discharge near the lough, from NI Water\'s May 2024 list published by DAERA.</p>' : '');
 } else if (s === 3) {
 h += '<p>These are the places and people a bloom hits first. In the model each one is tied to a stretch of shore, so a warning can name who needs to hear it.</p><ol class="list" style="list-style:none">';
 STAKE.forEach(function (st, i) {
@@ -181,14 +207,33 @@ h += '<li><strong><span class="stepno">' + (i + 1) + '</span> ' + esc(st.n) + '<
 h += '</ol>';
 } else if (s === 4 && r.live) {
 var lb = r.start.b, llv = level(lb), L = r.live;
-h += '<div class="readout"><span>Bloom index today</span><span class="badge l' + llv + '">' + lb.toFixed(2) + ' ' + LV[llv] + ', assumed</span></div>' +
-'<p>This is the real Met Office forecast for the middle of the lough. No live water readings are connected yet, so the model starts from an assumed low bloom level and a water temperature of ' + r.start.tw.toFixed(1) + ' °C, estimated from the air temperature.</p>' +
-'<div class="tablewrap"><table class="wx"><thead><tr><th scope="col" class="lh">Day</th><th scope="col">Air temp</th><th scope="col">Wind from</th><th scope="col">Rain</th></tr></thead><tbody>';
+h += '<div class="readout"><span>Bloom index today</span><span class="badge l' + llv + '">' + lb.toFixed(2) + ' ' + LV[llv] + (r.hist ? '' : ', assumed') + '</span></div>';
+if (r.hist) {
+h += '<p>The model has been run over the real weather of the last 30 days. Only the starting bloom level, 30 days ago, is assumed. It puts the water at about ' + r.start.tw.toFixed(1) + ' °C now.</p>' +
+'<div class="chart">' + chart30(r, 'yesterday') + '</div>';
+} else {
+h += '<p>This is the real Met Office forecast for the middle of the lough. Past weather could not be loaded, so the model starts from an assumed low bloom level and a water temperature of ' + r.start.tw.toFixed(1) + ' °C, estimated from the air temperature.</p>';
+}
+var bu = DATA && DATA.buoys ? DATA.buoys.filter(function (x) { return x.temp != null || x.pc != null; }) : [];
+if (bu.length) {
+var temps = bu.filter(function (x) { return x.temp != null; }).map(function (x) { return x.temp; });
+h += '<h3>What the DAERA buoys measured</h3><div class="tablewrap"><table class="wx"><thead><tr><th scope="col" class="lh">Buoy</th><th scope="col">Water</th><th scope="col">Algae pigment</th><th scope="col">Reading</th></tr></thead><tbody>';
+bu.forEach(function (x) {
+h += '<tr><th scope="row">' + esc(x.name) + '</th><td>' + (x.temp == null ? 'n/a' : x.temp.toFixed(1) + ' °C') + '</td><td>' + (x.pc == null ? 'n/a' : x.pc.toFixed(2) + ' RFU') + '</td><td>' + fmtDate(x.at.slice(0, 10)) + '</td></tr>';
+});
+h += '</tbody></table></div><p class="small">' + (temps.length ? 'The buoys averaged ' + (temps.reduce(function (p, q) { return p + q; }, 0) / temps.length).toFixed(1) + ' °C, against the model\'s ' + r.start.tw.toFixed(1) + ' °C. ' : '') + 'The pigment is phycocyanin, which blue-green algae contain, in relative fluorescence units. DAERA publishes these readings about a week late, they are provisional, and DAERA says no single value defines a bloom.</p>';
+}
+var yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+var recent = DATA && DATA.algae ? DATA.algae.filter(function (x) { return x.date >= yearAgo; }) : null;
+if (recent) {
+h += '<h3>Confirmed blue-green algae</h3><p>' + (recent.length ? 'DAERA has confirmed blue-green algae at ' + recent.length + ' location' + (recent.length === 1 ? '' : 's') + ' in and around the lough in the last 12 months, shown as pink dots. The most recent is ' + esc(recent[0].name) + ' on ' + fmtDate(recent[0].date) + ' ' + recent[0].date.slice(0, 4) + '.' : 'DAERA has no confirmed blue-green algae reports in and around the lough in the last 12 months.') + '</p>';
+}
+h += '<h3>Met Office forecast</h3><div class="tablewrap"><table class="wx"><thead><tr><th scope="col" class="lh">Day</th><th scope="col">Air temp</th><th scope="col">Wind from</th><th scope="col">Rain</th></tr></thead><tbody>';
 [L.today].concat(L.days.slice(0, 5)).forEach(function (dy, i) {
 h += '<tr><th scope="row">' + (i === 0 ? 'Today' : fmtDate(dy.date)) + '</th><td>' + dy.t.toFixed(0) + ' °C</td><td>' + compassShort(dy.dir) + ' ' + Math.round(dy.w) + ' mph</td><td>' + dy.r.toFixed(1) + ' mm</td></tr>';
 });
 h += '</tbody></table></div>' +
-'<p class="small">Forecast data from the Met Office Weather DataHub' + (L.modelRunDate ? ', model run ' + String(L.modelRunDate).slice(11, 16) + ' UTC on ' + fmtDate(String(L.modelRunDate).slice(0, 10)) : '') + '. Daily figures are averaged from three-hourly values.' + (r.start.tw < 12 ? ' In this model algae do not grow in water below 12 °C, so a cold forecast keeps the risk low on every shore.' : '') + '</p>';
+'<p class="small">Forecast from the Met Office Weather DataHub' + (L.modelRunDate ? ', model run ' + String(L.modelRunDate).slice(11, 16) + ' UTC on ' + fmtDate(String(L.modelRunDate).slice(0, 10)) : '') + ', averaged from three-hourly values.' + (r.hist ? ' Past weather is from the Open-Meteo weather model archive, not from a weather station.' : '') + (r.start.tw < 12 ? ' In this model algae do not grow in water below 12 °C, so cold weather keeps the risk low on every shore.' : '') + '</p>';
 } else if (s === 4) {
 var b = r.hist[29].b, lv = level(b);
 var story = { A: 'Cool air and a steady breeze keep the water mixed and below the temperature algae like. The index stays flat.',
@@ -253,12 +298,15 @@ var risk = s >= 4;
 showLayer(GEO.sup, s === 1 && state.geo === 'sup'); showLayer(GEO.bed, s === 1 && state.geo === 'bed');
 showLayer(LAYERS.rivers, s === 2); showLayer(LAYERS.stake, s === 3);
 showLayer(LAYERS.zones, risk); showLayer(LAYERS.wind, s === 4 || s === 5);
+showLayer(SAT, s === 0 && state.base === 'sat');
+showLayer(LAYERS.works, s === 2);
+showLayer(LAYERS.algae, s === 4 && !!r.live); showLayer(LAYERS.buoys, s === 4 && !!r.live);
 var cap = '';
 if (s === 1) cap = state.geo === 'off' ? '<span>Base map: OpenStreetMap.</span>' : '<span>' + (state.geo === 'sup' ? 'Surface deposits' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>';
-else if (s === 2) cap = '<span>Tonnes of phosphorus a year. Bigger dot, bigger load. Positions are approximate.</span>';
+else if (s === 2) cap = '<span>Tonnes of phosphorus a year. Bigger dot, bigger load. Positions are approximate.</span>' + (LAYERS.works ? '<span class="key"><span class="sw dot" style="background:#5b6770"></span>Treatment works</span>' : '');
 else if (s === 3) cap = '<span class="key"><span class="sw" style="background:var(--high)"></span>Drinking water intake</span><span class="key"><span class="sw" style="background:var(--med)"></span>Fishing</span><span class="key"><span class="sw" style="background:var(--accent)"></span>Recreation</span>';
-else if (risk) cap = '<span class="key"><span class="sw" style="background:var(--low)"></span>L low</span><span class="key"><span class="sw" style="background:var(--med)"></span>M medium</span><span class="key"><span class="sw" style="background:var(--high)"></span>H high</span><span>' + (s === 4 ? 'Risk today' : s === 5 ? 'Risk on day ' + (state.day + 1) : 'Worst risk in the next 5 days') + '</span>';
-else cap = '<span>Base map: OpenStreetMap. Pinch or use the buttons to zoom.</span>';
+else if (risk) cap = '<span class="key"><span class="sw" style="background:var(--low)"></span>L low</span><span class="key"><span class="sw" style="background:var(--med)"></span>M medium</span><span class="key"><span class="sw" style="background:var(--high)"></span>H high</span><span>' + (s === 4 ? 'Risk today' : s === 5 ? 'Risk on day ' + (state.day + 1) : 'Worst risk in the next 5 days') + '</span>' + (s === 4 && r.live && LAYERS.buoys ? '<span class="key"><span class="sw" style="background:#174a63"></span>B buoy</span>' : '') + (s === 4 && r.live && LAYERS.algae ? '<span class="key"><span class="sw dot" style="background:#b0206a"></span>Confirmed algae, last 12 months</span>' : '');
+else cap = state.base === 'sat' ? '<span>Satellite photo for ' + fmtDate(state.satDate) + ' ' + state.satDate.slice(0, 4) + ': NASA Terra MODIS, from NASA Worldview GIBS.</span>' : '<span>Base map: OpenStreetMap. Pinch or use the buttons to zoom.</span>';
 $('mapcap').innerHTML = cap;
 if (s === 4) { paintZones(r.today.map(level)); setWind(r.todayW || r.wx[29]); }
 if (s === 5) { paintZones(r.outlook[state.day].zones.map(function (c) { return c.lv; })); setWind(r.outlook[state.day].wind); }
@@ -267,6 +315,13 @@ paintZones(ZONES.map(function (z, zi) { var m = 0; r.outlook.forEach(function (o
 }
 $('panel').innerHTML = '<div><p class="stepno">Step ' + (s + 1) + ' of ' + STEPS.length + '</p><h2>' + (s === 4 && r.live ? 'The lough today' : STEPS[s]) + '</h2></div>' + sceneHtml(r) +
 '<div class="nav"><button type="button" id="prevBtn" ' + (s === 0 ? 'disabled' : '') + '>Back</button><button type="button" class="next" id="nextBtn" ' + (s === STEPS.length - 1 ? 'disabled' : '') + '>' + (s === STEPS.length - 1 ? 'End' : 'Next: ' + STEPS[s + 1]) + '</button></div>';
+}
+function loadData() {
+if (!window.fetch) return;
+fetch('/api/lough').then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok) return;
+DATA = j; buildData(); render();
+}).catch(function () {});
 }
 function loadLive() {
 var note = $('liveNote'), btn = $('scnL');
@@ -286,6 +341,7 @@ var t = e.target.closest ? e.target.closest('button') : null;
 if (!t) return;
 if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; }
 else if (t.dataset.geo) state.geo = t.dataset.geo;
+else if (t.dataset.base) state.base = t.dataset.base;
 else if (t.dataset.step != null) state.step = +t.dataset.step;
 else if (t.dataset.day != null) state.day = +t.dataset.day;
 else if (t.id === 'prevBtn') state.step = Math.max(0, state.step - 1);
@@ -294,8 +350,17 @@ else return;
 var id = t.id; render();
 if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
 });
+document.addEventListener('change', function (e) {
+if (e.target && e.target.id === 'satDate' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) && e.target.value <= YESTERDAY) {
+state.satDate = e.target.value;
+if (SAT) { SAT.options.date = state.satDate; SAT.redraw(); }
+render();
+if ($('satDate')) $('satDate').focus({ preventScroll: true });
+}
+});
 render();
 loadLive();
+loadData();
 }
 start();
 })();
