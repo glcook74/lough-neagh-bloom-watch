@@ -31,9 +31,25 @@ async function fieldStats() {
   });
 }
 
+/* Confirmed water pollution incidents 2011 to 2024, counted in 1 km squares. */
+async function incidents() {
+  var f = 'totals,farm,niw_ltd,domestic,industry,catagriculture,catsewage,high,y2020,y2021,y2022,y2023,y2024';
+  var j = await getJson(ORG + '/Pollution_Incidents_2011_to_2024/FeatureServer/0/query?where=totals%3E0' + NEAR + '&outFields=' + f +
+    '&returnGeometry=true&outSR=4326&geometryPrecision=4&resultRecordCount=2000&f=json');
+  return (j.features || []).filter(function (x) { return x.geometry && x.geometry.rings && x.geometry.rings[0]; }).map(function (x) {
+    var a = x.attributes, xs = x.geometry.rings[0].map(function (p) { return p[0]; }), ys = x.geometry.rings[0].map(function (p) { return p[1]; });
+    return {
+      b: [Math.min.apply(null, ys), Math.min.apply(null, xs), Math.max.apply(null, ys), Math.max.apply(null, xs)],
+      t: a.totals || 0, farm: a.farm || 0, niw: a.niw_ltd || 0, dom: a.domestic || 0, ind: a.industry || 0,
+      agri: a.catagriculture || 0, sew: a.catsewage || 0, high: a.high || 0,
+      recent: (a.y2020 || 0) + (a.y2021 || 0) + (a.y2022 || 0) + (a.y2023 || 0) + (a.y2024 || 0)
+    };
+  });
+}
+
 module.exports = async function (req, res) {
   var quiet = function (p) { return p.catch(function (e) { console.warn('Land data source failed:', String(e)); return null; }); };
-  var parts = await Promise.all([quiet(basins()), quiet(farms()), quiet(fieldStats())]);
+  var parts = await Promise.all([quiet(basins()), quiet(farms()), quiet(fieldStats()), quiet(incidents())]);
   var ok = !!(parts[0] || parts[1] || parts[2]);
   res.setHeader('Cache-Control', ok ? 'public, s-maxage=86400, stale-while-revalidate=604800' : 'public, s-maxage=120');
   if (req.query && req.query.summary) {
@@ -43,6 +59,7 @@ module.exports = async function (req, res) {
       farms: parts[1] && parts[1].features.map(function (f) { return f.properties.DEAName; }),
       farmSample: parts[1] && parts[1].features[0] && parts[1].features[0].properties,
       fieldStats: parts[2],
+      incidents: parts[3] && { squares: parts[3].length, total: parts[3].reduce(function (p, x) { return p + x.t; }, 0), farm: parts[3].reduce(function (p, x) { return p + x.farm; }, 0), first: parts[3][0] },
       bytes: JSON.stringify(parts).length
     });
     return;
@@ -50,6 +67,6 @@ module.exports = async function (req, res) {
   res.status(ok ? 200 : 502).json({
     ok: ok,
     source: 'DAERA open data (ArcGIS), Open Government Licence v3.0',
-    basins: parts[0], farms: parts[1], fieldStats: parts[2]
+    basins: parts[0], farms: parts[1], fieldStats: parts[2], incidents: parts[3]
   });
 };
