@@ -14,3 +14,5 @@ This is a demonstration model. The lough facts are real. The weather and risk nu
 - `app.js` - the step-by-step walkthrough and charts
 
 There is no build step. Vercel serves these files as they are.
+
+Changes pushed to the `main` branch publish to the live site automatically.
