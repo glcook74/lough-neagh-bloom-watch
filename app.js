@@ -198,7 +198,7 @@ h += '</div><h3>Where it comes from</h3>' +
 '<span style="width:61%;background:var(--low)"></span><span style="width:29%;background:var(--water-ink)"></span><span style="width:9%;background:var(--muted)"></span><span style="width:1.3%;background:var(--med)"></span></div>' +
 '<div class="legend"><span class="key"><span class="sw" style="background:var(--low)"></span>Agriculture 61%</span><span class="key"><span class="sw" style="background:var(--water-ink)"></span>Wastewater 29%</span><span class="key"><span class="sw" style="background:var(--muted)"></span>Other 9%</span><span class="key"><span class="sw" style="background:var(--med)"></span>Septic tanks 1.3%</span></div>' +
 '<p class="small">AFBI modelling, 2021 reference year, tonnes of phosphorus. Provisional figures.</p>' +
-(DATA && DATA.works && DATA.works.length ? '<p class="small">The small grey dots on the map are ' + DATA.works.length + ' NI Water wastewater treatment works that discharge near the lough, from NI Water\'s May 2024 list published by DAERA.</p>' : '');
+(DATA && DATA.works && DATA.works.length ? '<p class="small">The small grey dots on the map are ' + DATA.works.length + ' NI Water wastewater treatment works in the area shown, from NI Water\'s May 2024 list published by DAERA. Not all of them drain to the lough.</p>' : '');
 } else if (s === 3) {
 h += '<p>These are the places and people a bloom hits first. In the model each one is tied to a stretch of shore, so a warning can name who needs to hear it.</p><ol class="list" style="list-style:none">';
 STAKE.forEach(function (st, i) {
