@@ -42,7 +42,7 @@ var BASIN_P = [
 var OCHRE = ['#f3e3b5', '#e3c26f', '#cf9b3a', '#a8701f', '#7a4a12'];
 var BLUES = ['#e3eef5', '#b9d3e6', '#86b2d3', '#4f8bba', '#1f5f93'];
 var RISK = { 1: ['Low', '#2c8a57'], 2: ['Medium', '#c97f00'], 3: ['High', '#bf3528'] };
-var GOTO = [['Antrim Bay', 54.712, -6.25], ['Ballyronan', 54.708, -6.52], ['Maghery', 54.515, -6.57], ['Kinnego', 54.496, -6.36]];
+var GOTO = [['Maghery', 54.512, -6.58], ['Glenavy shore', 54.575, -6.28], ['Kinnego', 54.492, -6.36], ['Ballyronan', 54.708, -6.52]];
 function basinP(name) { for (var i = 0; i < BASIN_P.length; i++) if (BASIN_P[i].k.test(name || '')) return BASIN_P[i]; return null; }
 function ramp(v, lo, hi, cols) { var k = hi > lo ? (v - lo) / (hi - lo) : 0; return cols[Math.max(0, Math.min(cols.length - 1, Math.floor(k * cols.length)))]; }
 function nf(v) { return Math.round(v).toLocaleString('en-GB'); }
@@ -158,7 +158,7 @@ if (key !== fieldsKey) return;
 fieldsLayer.clearLayers();
 if (!j || !j.ok) { say('The fields could not be loaded just now.'); return; }
 fieldsLayer.addData({ type: 'FeatureCollection', features: j.features });
-say(j.features.length ? j.features.length + ' fields shown' + (j.more ? ', which is all the map can load at once. Zoom in further to be sure of seeing every field.' : '. Tap one for its score.') : 'No scored farmland in this view.');
+say(j.features.length ? j.features.length + ' parcels shown' + (j.more ? ', which is all the map can load at once. Zoom in further to be sure of seeing every parcel.' : '. Tap one for its score.') : 'No scored parcels in this view.');
 }).catch(function () { if (key === fieldsKey) { fieldsKey = ''; say('The fields could not be loaded just now.'); } });
 }
 function showLayer(layer, on) {
@@ -243,17 +243,17 @@ h += '<p>Of the land farmed around the lough, ' + gp.toFixed(0) + '% is grass an
 '<div><dt>Pigs</dt><dd>' + nf(T.pigs) + '</dd></div><div><dt>Poultry</dt><dd>' + nf(T.poultry) + '</dd></div>' +
 '</dl><p class="small">DAERA farm census 2019, added up over the ' + LAND.farms.features.length + ' district electoral areas that touch the map. These follow council boundaries, not river basins, so some of this land drains elsewhere. Tap an area for its own figures.</p>';
 } else {
-var st = LAND.fieldStats || [], by = { 1: 0, 2: 0, 3: 0 }, tot = 0;
-st.forEach(function (x) { if (by[x.risk] != null) { by[x.risk] += x.ha; tot += x.ha; } });
-h += '<p>DAERA has scored each arable and improved grassland field for its risk of losing nutrients to water. The score uses slope, rainfall, soil, soil phosphorus and distance to a river, among other things.</p>';
+var st = LAND.fieldStats || [], by = { 1: 0, 2: 0, 3: 0 }, tot = 0, nfields = 0;
+st.forEach(function (x) { if (by[x.risk] != null) { by[x.risk] += x.ha; tot += x.ha; nfields += x.fields || 0; } });
+h += '<p>DAERA\'s agricultural risk map picks out parcels of arable land and improved grassland and scores each one for its risk of losing nutrients to water. The score uses slope, rainfall, soil, soil phosphorus and distance to a river, among other things.</p>';
 if (tot > 0) {
 h += '<div class="split" role="img" aria-label="Share of scored farmland at low, medium and high risk">' + [1, 2, 3].map(function (k) { return '<span style="width:' + (by[k] / tot * 100).toFixed(1) + '%;background:' + RISK[k][1] + '"></span>'; }).join('') + '</div>' +
 '<div class="legend">' + [1, 2, 3].map(function (k) { return '<span class="key"><span class="sw" style="background:' + RISK[k][1] + '"></span>' + RISK[k][0] + ' ' + (by[k] / tot * 100).toFixed(0) + '%, ' + nf(by[k]) + ' ha</span>'; }).join('') + '</div>';
 }
-h += '<h3>See the fields</h3><p class="small">Zoom in on the map and the individual fields appear. Or jump to:</p><div class="seg" role="group" aria-label="Jump to a place">' +
+h += '<h3>See the fields</h3><p class="small">Zoom in on the map and the individual parcels appear. Or jump to:</p><div class="seg" role="group" aria-label="Jump to a place">' +
 GOTO.map(function (g, i) { return '<button type="button" id="goto_' + i + '" data-goto="' + i + '">' + g[0] + '</button>'; }).join('') + '<button type="button" id="goto_all" data-goto="all">Whole lough</button></div>' +
 '<p class="small" id="fieldNote" role="status">Zoom in closer to load the fields.</p>' +
-'<p class="small">Figures cover the area of the map. DAERA built this from the 2007 land cover map and 2015 water quality results, so it shows where risk sits, not how each field is farmed today. On a phone you can drag the map in this view.</p>';
+'<p class="small">' + (tot > 0 ? 'The risk map has ' + nf(nfields) + ' parcels covering ' + nf(tot) + ' ha in the area of the map, so it does not include every field. ' : '') + 'DAERA built it from the 2007 land cover map and 2015 water quality results, so it shows where risk sits, not how each field is farmed today. On a phone you can drag the map in this view.</p>';
 }
 return h;
 }
