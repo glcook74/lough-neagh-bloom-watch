@@ -16,6 +16,10 @@ This is a demonstration model. The lough facts are real. The weather and risk nu
 
 There is no build step. Vercel serves these files as they are.
 
+## Map
+
+The map uses Leaflet with OpenStreetMap as the base map and the Geological Survey of Northern Ireland 1:250,000 geology layers (surface deposits and bedrock) from its public map service. Marker positions for rivers, shores and places are approximate.
+
 ## Live forecast
 
 The Live forecast option uses the Met Office Weather DataHub (Global Spot, three-hourly). The API key is stored in Vercel as the environment variable `MET_OFFICE_API_KEY` and is never sent to the browser. Responses are cached for an hour to stay inside the free daily allowance.

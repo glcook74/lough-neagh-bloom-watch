@@ -65,7 +65,33 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .mapbox { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
 }
 .mapbox { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px; min-width: 0; }
-.mapbox svg { display: block; width: 100%; height: auto; max-width: 440px; margin: 0 auto; }
+/* The map tiles are always light, so markers on the map use one fixed palette in both themes. */
+.mapbox { isolation: isolate; --m-ink: #10262e; --m-water: #174a63; --m-low: #2c8a57; --m-med: #c97f00; --m-high: #bf3528; --m-accent: #0d6a62; }
+#map { height: 430px; border-radius: 8px; background: var(--land); font-family: var(--body); }
+@media (min-width: 880px) { #map { height: 540px; } }
+.mapfail { padding: 24px 12px; color: var(--muted); font-size: 0.9rem; }
+.mk { overflow: visible; }
+.zm, .sm { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); font-family: var(--mono); font-size: 11px; font-weight: 500; color: #ffffff; }
+.zm.l0 { background: var(--m-low); } .zm.l1 { background: var(--m-med); } .zm.l2 { background: var(--m-high); }
+.sm.intake { background: var(--m-high); } .sm.fishery { background: var(--m-med); } .sm.bathing, .sm.marina { background: var(--m-accent); }
+.rdot { display: block; border-radius: 50%; background: var(--m-water); border: 2px solid #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+.rdot.out { background: #ffffff; border-color: var(--m-water); }
+.zlab { position: absolute; white-space: nowrap; pointer-events: none; font-size: 11px; font-weight: 600; line-height: 1.1; color: var(--m-ink); text-shadow: 0 0 2px #ffffff, 0 0 2px #ffffff, 0 0 3px #ffffff, 0 0 4px #ffffff; }
+.zlab i { font-family: var(--mono); font-style: normal; font-weight: 500; }
+.zlab.dim { font-weight: 500; }
+.zlab.right { left: calc(100% + 4px); top: 50%; transform: translateY(-50%); }
+.zlab.left { right: calc(100% + 4px); top: 50%; transform: translateY(-50%); }
+.zlab.up { left: 50%; bottom: calc(100% + 3px); transform: translateX(-50%); }
+.zlab.down { left: 50%; top: calc(100% + 3px); transform: translateX(-50%); }
+.mk svg { display: block; opacity: 0.85; }
+.mk svg line { stroke: var(--m-water); } .mk svg path { fill: var(--m-water); }
+.leaflet-container a { color: #0d6a62; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button { font: inherit; font-size: 0.82rem; font-weight: 500; flex: 1 1 auto; min-height: 40px; padding: 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.legendbox summary { cursor: pointer; font-size: 0.86rem; font-weight: 600; padding: 6px 0; }
+.legendimg { background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 320px; overflow: auto; }
+.legendimg img { display: block; max-width: none; }
 .mapcap { font-size: 0.75rem; color: var(--muted); padding: 6px 6px 2px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .key { display: inline-flex; align-items: center; gap: 5px; }
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }

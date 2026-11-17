@@ -8,6 +8,7 @@
 <meta property="og:description" content="An interactive demonstration of how weather, nutrients and wind could be used to forecast blue-green algae risk around the Lough Neagh shoreline.">
 <title>Lough Neagh Bloom Watch</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -33,50 +34,7 @@
 </section>
 <div class="stage">
 <figure class="mapbox">
-<svg id="map" viewBox="0 0 360 430" role="img" aria-labelledby="mapTitle">
-<title id="mapTitle">Schematic map of Lough Neagh</title>
-<defs>
-<clipPath id="loughClip"><path d="M128,84 C150,70 190,78 215,86 C235,90 262,84 272,100 C282,125 268,150 272,180 C276,215 270,250 262,285 C256,315 240,340 215,350 C190,358 160,356 135,348 C112,340 100,310 98,280 C96,245 108,215 100,185 C94,150 100,115 128,84 Z"/></clipPath>
-<marker id="ah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="var(--water-ink)"/></marker>
-</defs>
-<rect x="0" y="0" width="360" height="430" rx="8" fill="var(--land)"/>
-<g id="gGeo" hidden>
-<polygon points="0,0 360,0 360,430 252,430 244,300 205,190 60,118 0,140" fill="var(--basalt)" opacity="0.55"/>
-<polygon points="0,140 60,118 205,190 244,300 252,430 0,430" fill="var(--clay)" opacity="0.6"/>
-<ellipse cx="150" cy="374" rx="34" ry="12" fill="var(--peat)" opacity="0.8"/>
-<ellipse cx="214" cy="372" rx="22" ry="10" fill="var(--peat)" opacity="0.8"/>
-<ellipse cx="88" cy="338" rx="14" ry="20" fill="var(--peat)" opacity="0.8"/>
-</g>
-<g id="gRivers"></g>
-<path id="lough" d="M128,84 C150,70 190,78 215,86 C235,90 262,84 272,100 C282,125 268,150 272,180 C276,215 270,250 262,285 C256,315 240,340 215,350 C190,358 160,356 135,348 C112,340 100,310 98,280 C96,245 108,215 100,185 C94,150 100,115 128,84 Z" fill="var(--water)" stroke="var(--water-ink)" stroke-width="1.2"/>
-<g id="gDepth" hidden clip-path="url(#loughClip)">
-<path d="M128,84 C150,70 190,78 215,86 C235,90 262,84 272,100 C282,125 268,150 272,180 C276,215 270,250 262,285 C256,315 240,340 215,350 C190,358 160,356 135,348 C112,340 100,310 98,280 C96,245 108,215 100,185 C94,150 100,115 128,84 Z" transform="translate(185 215) scale(0.68) translate(-185 -215)" fill="var(--water-deep)"/>
-</g>
-<ellipse cx="252" cy="208" rx="3" ry="6" fill="var(--land)" stroke="var(--water-ink)" stroke-width="0.6"/>
-<g id="gTowns"></g>
-<g id="gGeoLabels" hidden>
-<text class="mt b" x="296" y="40" text-anchor="middle">Basalt</text>
-<text class="mt b" x="52" y="250" text-anchor="middle">Clays and</text>
-<text class="mt b" x="52" y="263" text-anchor="middle">sandstone</text>
-<text class="mt b" x="150" y="398" text-anchor="middle">Peat</text>
-<text class="mt wat" x="185" y="212" text-anchor="middle">deeper middle</text>
-<text class="mt wat" x="185" y="300" text-anchor="middle">shallow margins</text>
-</g>
-<g id="gStake" hidden></g>
-<g id="gWind" hidden>
-<g id="windArrow" style="transform-origin:185px 215px; transform: rotate(0deg)">
-<line x1="185" y1="262" x2="185" y2="176" stroke="var(--water-ink)" stroke-width="5" stroke-linecap="round"/>
-<path d="M185,156 L171,182 L199,182 Z" fill="var(--water-ink)"/>
-</g>
-<text id="windText" class="mt wat" x="185" y="290" text-anchor="middle"></text>
-</g>
-<g id="gZones" hidden></g>
-<g transform="translate(332 398)" aria-hidden="true">
-<line x1="0" y1="14" x2="0" y2="-10" stroke="var(--muted)" stroke-width="1.2"/>
-<path d="M0,-16 L-4,-7 L4,-7 Z" fill="var(--muted)"/>
-<text class="mt dim" x="0" y="26" text-anchor="middle">N</text>
-</g>
-</svg>
+<div id="map" role="group" aria-label="Map of Lough Neagh"></div>
 <figcaption class="mapcap" id="mapcap"></figcaption>
 </figure>
 <section class="panel" id="panel"></section>
@@ -95,10 +53,13 @@
 <li>Phosphorus by river and by source: AFBI modelling for the NEW Harmonica project, 2021 reference year, shared by DAERA in June 2025 and still under review at the time.</li>
 <li>Zebra mussels, water clarity and sediment phosphorus: AFBI and DAERA statements, 2023 and 2024.</li>
 <li>Live forecast: Met Office Weather DataHub, Global Spot three-hourly forecast for the centre of the lough.</li>
-<li>Geology and depth bands on the map are simplified sketches.</li>
+<li>Geology layers: Geological Survey of Northern Ireland 1:250,000 mapping. Contains Geological Survey of Northern Ireland materials © Crown Copyright, under the Open Government Licence.</li>
+<li>Base map: © OpenStreetMap contributors.</li>
+<li>Markers for rivers, shores and places are positioned approximately.</li>
 </ul>
 </footer>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="model.js"></script>
 <script src="app.js"></script>
 </body>

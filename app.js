@@ -1,38 +1,37 @@
 (function () {
+var BOUNDS = [[54.46, -6.74], [54.79, -6.10]];
+var CENTRE = [54.62, -6.41];
+var GSNI = 'https://map.bgs.ac.uk/arcgis/services/GeoIndex_GSNI/GSNI_Geology_Landsat_WMS/MapServer/WMSServer';
+/* Positions are approximate, placed by eye at river mouths and on the shore. */
 var RIVERS = [
-{ name: 'Blackwater',     t: 173, mx: 136, my: 348, sx: 36,  sy: 424, lx: 8,   ly: 360, a: 'start' },
-{ name: 'Main',           t: 74,  mx: 212, my: 86,  sx: 226, sy: 6,   lx: 236, ly: 44,  a: 'start' },
-{ name: 'Upper Bann',     t: 66,  mx: 192, my: 356, sx: 222, sy: 426, lx: 232, ly: 414, a: 'start' },
-{ name: 'Ballinderry',    t: 37,  mx: 99,  my: 165, sx: 6,   sy: 150, lx: 8,   ly: 142, a: 'start' },
-{ name: 'Six Mile Water', t: 29,  mx: 272, my: 100, sx: 354, sy: 78,  lx: 352, ly: 70,  a: 'end' },
-{ name: 'Moyola',         t: 29,  mx: 116, my: 97,  sx: 14,  sy: 56,  lx: 8,   ly: 48,  a: 'start' }
+{ name: 'Blackwater', t: 173, ll: [54.517, -6.570], side: 'down' },
+{ name: 'Main', t: 74, ll: [54.724, -6.290], side: 'up' },
+{ name: 'Upper Bann', t: 66, ll: [54.507, -6.503], side: 'right' },
+{ name: 'Ballinderry', t: 37, ll: [54.655, -6.500], side: 'left' },
+{ name: 'Six Mile Water', t: 29, ll: [54.712, -6.240], side: 'down' },
+{ name: 'Moyola', t: 29, ll: [54.735, -6.495], side: 'left' }
 ];
 var SMALL = [
-{ name: 'Crumlin', mx: 273, my: 168, sx: 354, sy: 160 },
-{ name: 'Glenavy', mx: 273, my: 198, sx: 354, sy: 206 }
+{ name: 'Crumlin', ll: [54.632, -6.262] },
+{ name: 'Glenavy', ll: [54.595, -6.262] }
 ];
-var TOWNS = [
-{ n: 'Toome', x: 112, y: 74, a: 'end' }, { n: 'Antrim', x: 282, y: 92, a: 'start' },
-{ n: 'Ballyronan', x: 90, y: 128, a: 'end' }, { n: 'Ardboe', x: 88, y: 200, a: 'end' },
-{ n: 'Maghery', x: 122, y: 368, a: 'end' }, { n: 'Lurgan', x: 262, y: 366, a: 'start' },
-{ n: 'Crumlin', x: 290, y: 150, a: 'start' }
-];
-var ZLAB = {
-toome: [112, 78, 'end'], north: [180, 64, 'middle'], antrim: [276, 86, 'start'], east: [284, 219, 'start'],
-kinnego: [254, 348, 'start'], south: [165, 378, 'middle'], washing: [98, 342, 'end'], west: [88, 200, 'end']
+var OUTFLOW = { name: 'Lower Bann, out to sea', ll: [54.756, -6.463] };
+var ZPOS = {
+toome: [[54.748, -6.468], 'left'], north: [[54.700, -6.360], 'up'], antrim: [[54.705, -6.250], 'right'], east: [[54.605, -6.268], 'right'],
+kinnego: [[54.495, -6.370], 'right'], south: [[54.504, -6.490], 'down'], washing: [[54.548, -6.582], 'left'], west: [[54.620, -6.500], 'left']
 };
 var STAKE = [
-{ n: 'Toome eel fishery', x: 132, y: 86, zone: 'toome', type: 'fishery', note: 'Home of the eel co-operative, where the Lower Bann leaves the lough' },
-{ n: 'Moyola water intake', x: 113, y: 106, zone: 'toome', type: 'intake', note: 'NI Water draws raw water here' },
-{ n: 'Cranfield shore', x: 180, y: 80, zone: 'north', type: 'marina', note: 'Shore anglers and small boats' },
-{ n: 'Antrim Lough Shore Park', x: 266, y: 94, zone: 'antrim', type: 'bathing', note: 'Walkers, dogs, paddlers, and the Rea\'s Wood monitoring buoy' },
-{ n: 'Dunore Point water intake', x: 270, y: 142, zone: 'east', type: 'intake', note: 'NI Water abstraction tower on the eastern shore' },
-{ n: 'Sandy Bay and Rams Island', x: 268, y: 214, zone: 'east', type: 'marina', note: 'Boat trips and moorings' },
-{ n: 'Castor Bay water intake', x: 250, y: 316, zone: 'kinnego', type: 'intake', note: 'Supplies around 324,000 people' },
-{ n: 'Kinnego Marina and Oxford Island', x: 234, y: 338, zone: 'kinnego', type: 'bathing', note: 'Sailing, watersports and a nature reserve' },
-{ n: 'Bannfoot', x: 190, y: 354, zone: 'south', type: 'marina', note: 'Where the Upper Bann comes in' },
-{ n: 'Washing Bay', x: 112, y: 324, zone: 'washing', type: 'bathing', note: 'Open water swimmers, and a DAERA monitoring buoy' },
-{ n: 'Ardboe and Ballyronan', x: 101, y: 190, zone: 'west', type: 'fishery', note: 'Fishing boats and Ballyronan Marina' }
+{ n: 'Toome eel fishery', ll: [54.753, -6.462], zone: 'toome', type: 'fishery', note: 'Home of the eel co-operative, where the Lower Bann leaves the lough' },
+{ n: 'Moyola water intake', ll: [54.728, -6.497], zone: 'toome', type: 'intake', note: 'NI Water draws raw water here' },
+{ n: 'Cranfield shore', ll: [54.695, -6.355], zone: 'north', type: 'marina', note: 'Shore anglers and small boats' },
+{ n: 'Antrim Lough Shore Park', ll: [54.711, -6.238], zone: 'antrim', type: 'bathing', note: 'Walkers, dogs, paddlers, and the Rea\'s Wood monitoring buoy' },
+{ n: 'Dunore Point water intake', ll: [54.675, -6.255], zone: 'east', type: 'intake', note: 'NI Water abstraction tower on the eastern shore' },
+{ n: 'Sandy Bay and Rams Island', ll: [54.587, -6.270], zone: 'east', type: 'marina', note: 'Boat trips and moorings' },
+{ n: 'Castor Bay water intake', ll: [54.497, -6.335], zone: 'kinnego', type: 'intake', note: 'Supplies around 324,000 people' },
+{ n: 'Kinnego Marina and Oxford Island', ll: [54.492, -6.372], zone: 'kinnego', type: 'bathing', note: 'Sailing, watersports and a nature reserve' },
+{ n: 'Bannfoot', ll: [54.503, -6.507], zone: 'south', type: 'marina', note: 'Where the Upper Bann comes in' },
+{ n: 'Washing Bay', ll: [54.546, -6.586], zone: 'washing', type: 'bathing', note: 'Open water swimmers, and a DAERA monitoring buoy' },
+{ n: 'Ardboe and Ballyronan', ll: [54.640, -6.505], zone: 'west', type: 'fishery', note: 'Fishing boats and Ballyronan Marina' }
 ];
 var DO = {
 bathing: 'Signs up at the shore: no swimming or paddling, keep dogs out of the water.',
@@ -44,7 +43,7 @@ var STEPS = ['The lough', 'Beneath the surface', 'What flows in', 'What is at st
 var LV = ['Low', 'Medium', 'High'];
 var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
-var state = { scn: 'B', step: 0, day: 0 };
+var state = { scn: 'B', step: 0, day: 0, geo: 'sup' };
 var cache = {};
 var LIVE = null;
 function run() {
@@ -58,53 +57,52 @@ var COMPASS_SHORT = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 function fmtDate(iso) { var d = new Date(iso + 'T12:00:00Z'); return DAYN[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONN[d.getUTCMonth()]; }
 function compassShort(deg) { return COMPASS_SHORT[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 function $(id) { return document.getElementById(id); }
-function show(id, on) { var el = $(id); if (on) el.removeAttribute('hidden'); else el.setAttribute('hidden', ''); }
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 function zoneById(id) { for (var i = 0; i < ZONES.length; i++) if (ZONES[i].id === id) return i; return -1; }
-/* ---------- static map layers ---------- */
+/* ---------- map ---------- */
+var MAP = null, GEO = {}, LAYERS = {}, zoneMarkers = {}, windMarker = null;
+function mk(html, size) { return L.divIcon({ html: html, className: 'mk', iconSize: [size, size], iconAnchor: [size / 2, size / 2] }); }
+function zoneIcon(z, lv) { return mk('<span class="zm l' + lv + '">' + LV[lv].charAt(0) + '</span><span class="zlab ' + ZPOS[z.id][1] + '">' + z.short + '</span>', 22); }
+function windIcon(toward) {
+return mk('<svg viewBox="-50 -50 100 100" width="96" height="96" style="transform:rotate(' + toward.toFixed(0) + 'deg)" aria-hidden="true"><line x1="0" y1="36" x2="0" y2="-16" stroke-width="7" stroke-linecap="round"/><path d="M0,-42 L-15,-13 L15,-13 Z"/></svg>', 96);
+}
 function buildMap() {
-var h = '<path d="M128,84 L118,6" fill="none" stroke="var(--water-ink)" stroke-width="3" stroke-dasharray="5 4" marker-end="url(#ah)" opacity="0.8"/>';
-RIVERS.forEach(function (r) {
-var sw = (1.5 + r.t / 173 * 6).toFixed(1);
-h += '<line x1="' + r.sx + '" y1="' + r.sy + '" x2="' + r.mx + '" y2="' + r.my + '" stroke="var(--water-ink)" stroke-width="' + sw + '" stroke-linecap="round" opacity="0.75"/>';
+if (!window.L) { $('map').innerHTML = '<p class="mapfail">The map could not load. The rest of the page still works.</p>'; return; }
+MAP = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, minZoom: 8, maxZoom: 15, scrollWheelZoom: false, dragging: !L.Browser.mobile });
+MAP.attributionControl.setPrefix(false);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(MAP);
+MAP.fitBounds(BOUNDS);
+var credit = 'Contains Geological Survey of Northern Ireland materials &copy; Crown Copyright ' + new Date().getFullYear();
+GEO.sup = L.tileLayer.wms(GSNI, { layers: '6', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.6, attribution: credit });
+GEO.bed = L.tileLayer.wms(GSNI, { layers: '5', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.6, attribution: credit });
+var rm = RIVERS.map(function (r) {
+var d = Math.round(10 + r.t / 173 * 16);
+return L.marker(r.ll, { interactive: false, icon: mk('<span class="rdot" style="width:' + d + 'px;height:' + d + 'px"></span><span class="zlab ' + r.side + '">' + r.name + ' <i>' + r.t + ' t</i></span>', d) });
 });
-SMALL.forEach(function (r) {
-h += '<line x1="' + r.sx + '" y1="' + r.sy + '" x2="' + r.mx + '" y2="' + r.my + '" stroke="var(--water-ink)" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/>';
-});
-h += '<g id="gRiverLabels" hidden>';
-RIVERS.forEach(function (r) {
-h += '<text class="mt b" x="' + r.lx + '" y="' + r.ly + '" text-anchor="' + r.a + '">' + r.name + ' <tspan class="ct">' + r.t + ' t</tspan></text>';
-});
-h += '<text class="mt dim" x="352" y="152" text-anchor="end">Crumlin</text><text class="mt dim" x="352" y="222" text-anchor="end">Glenavy</text>';
-h += '<text class="mt dim" x="134" y="28" text-anchor="start">Lower Bann out</text></g>';
-$('gRivers').innerHTML = h;
-$('gTowns').innerHTML = TOWNS.map(function (t) {
-return '<text class="mt dim" x="' + t.x + '" y="' + t.y + '" text-anchor="' + t.a + '">' + t.n + '</text>';
-}).join('');
-$('gStake').innerHTML = STAKE.map(function (s, i) {
-var fill = s.type === 'intake' ? 'var(--high)' : s.type === 'fishery' ? 'var(--med)' : 'var(--accent)';
-return '<g><circle cx="' + s.x + '" cy="' + s.y + '" r="8" fill="' + fill + '" stroke="var(--surface)" stroke-width="1.5"/>' +
-'<text class="zl" x="' + s.x + '" y="' + (s.y + 3.5) + '">' + (i + 1) + '</text></g>';
-}).join('') + '<text class="mt wat" x="185" y="208" text-anchor="middle">eel and pollan</text><text class="mt wat" x="185" y="221" text-anchor="middle">fished lough-wide</text>';
-$('gZones').innerHTML = ZONES.map(function (z) {
-var l = ZLAB[z.id];
-return '<g class="zone" id="z_' + z.id + '"><circle cx="' + z.x + '" cy="' + z.y + '" r="11" fill="var(--low)" stroke="var(--surface)" stroke-width="2"/>' +
-'<text class="zl" x="' + z.x + '" y="' + (z.y + 3.5) + '">L</text>' +
-'<text class="mt b" x="' + l[0] + '" y="' + l[1] + '" text-anchor="' + l[2] + '">' + z.short + '</text></g>';
-}).join('');
+SMALL.forEach(function (r) { rm.push(L.marker(r.ll, { interactive: false, icon: mk('<span class="rdot" style="width:8px;height:8px"></span><span class="zlab right dim">' + r.name + '</span>', 8) })); });
+rm.push(L.marker(OUTFLOW.ll, { interactive: false, icon: mk('<span class="rdot out" style="width:14px;height:14px"></span><span class="zlab up">' + OUTFLOW.name + '</span>', 14) }));
+LAYERS.rivers = L.layerGroup(rm);
+LAYERS.stake = L.layerGroup(STAKE.map(function (s, i) {
+return L.marker(s.ll, { title: s.n, alt: s.n, icon: mk('<span class="sm ' + s.type + '">' + (i + 1) + '</span>', 22) });
+}));
+LAYERS.zones = L.layerGroup(ZONES.map(function (z) {
+return (zoneMarkers[z.id] = L.marker(ZPOS[z.id][0], { title: z.name, alt: z.name, icon: zoneIcon(z, 0) }));
+}));
+windMarker = L.marker(CENTRE, { interactive: false, keyboard: false, zIndexOffset: -500, icon: windIcon(0) });
+LAYERS.wind = L.layerGroup([windMarker]);
+}
+function showLayer(layer, on) {
+if (!MAP || !layer) return;
+if (on && !MAP.hasLayer(layer)) layer.addTo(MAP);
+if (!on && MAP.hasLayer(layer)) MAP.removeLayer(layer);
 }
 function paintZones(levels) {
-var fills = ['var(--low)', 'var(--med)', 'var(--high)'];
-ZONES.forEach(function (z, i) {
-var g = $('z_' + z.id);
-g.querySelector('circle').setAttribute('fill', fills[levels[i]]);
-g.querySelector('.zl').textContent = LV[levels[i]].charAt(0);
-});
+if (!MAP) return;
+ZONES.forEach(function (z, i) { zoneMarkers[z.id].setIcon(zoneIcon(z, levels[i])); });
 }
 function setWind(w) {
-var toward = (w.dir + 180) % 360;
-$('windArrow').style.transform = 'rotate(' + toward.toFixed(0) + 'deg)';
-$('windText').textContent = 'surface drift';
+if (!MAP) return;
+windMarker.setIcon(windIcon((w.dir + 180) % 360));
 }
 /* ---------- scene panels ---------- */
 function chart30(r) {
@@ -155,7 +153,10 @@ h += '<p>Lough Neagh is big, shallow and slow to empty. Those three things expla
 '<div><dt>Time water stays in the lough</dt><dd>16 months</dd></div><div><dt>Share of NI drinking water</dt><dd>about 40%</dd></div>' +
 '</dl><p class="small">Six main rivers flow in. Only one, the Lower Bann at Toome, flows out.</p>';
 } else if (s === 1) {
-h += '<p>The ground around the lough shapes what reaches it. Heavy clay soils to the south and west drain poorly, so rain runs off the fields quickly and takes phosphorus with it.</p>' +
+h += '<p>The coloured layer is the Geological Survey of Northern Ireland\'s 1:250,000 map. Where the surface is clay or peat, rain drains poorly and runs off the fields quickly, taking phosphorus with it.</p>' +
+'<div class="seg" role="group" aria-label="Geology layer">' +
+[['sup', 'Surface deposits'], ['bed', 'Bedrock'], ['off', 'Map only']].map(function (g) { return '<button type="button" id="geo_' + g[0] + '" data-geo="' + g[0] + '" aria-pressed="' + (state.geo === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>' +
+(state.geo !== 'off' ? '<details class="legendbox"><summary>What the colours mean</summary><div class="legendimg"><img alt="Key to the geology colours, from the Geological Survey of Northern Ireland" loading="lazy" src="' + GSNI + '?service=WMS&amp;version=1.3.0&amp;request=GetLegendGraphic&amp;format=image/png&amp;layer=' + (state.geo === 'sup' ? '6' : '5') + '"></div></details>' : '') +
 '<ul class="list">' +
 '<li><strong>Shallow water</strong><span class="sub">Warms fast, and a strong wind can stir the bed all the way up.</span></li>' +
 '<li><strong>Phosphorus in the mud</strong><span class="sub">Decades of nutrients sit in the sediment. AFBI scientists have said they could keep feeding the lough for around 40 years.</span></li>' +
@@ -163,7 +164,7 @@ h += '<p>The ground around the lough shapes what reaches it. Heavy clay soils to
 '</ul>';
 } else if (s === 2) {
 var total = 0; RIVERS.forEach(function (rv) { total += rv.t; });
-h += '<p>Blue-green algae feed on phosphorus. This is how much each river is estimated to carry into the lough in a year. Line thickness on the map matches.</p><div class="bars">';
+h += '<p>Blue-green algae feed on phosphorus. This is how much each river is estimated to carry into the lough in a year. Bigger dots on the map mean bigger loads.</p><div class="bars">';
 RIVERS.concat([{ name: 'Smaller rivers', t: 66 }, { name: 'Straight into lough', t: 65 }]).forEach(function (rv) {
 h += '<div class="bar"><span>' + rv.name + '</span><span class="track"><span class="fill" style="display:block;width:' + (rv.t / 173 * 100).toFixed(0) + '%"></span></span><span class="val">' + rv.t + ' t</span></div>';
 });
@@ -248,18 +249,16 @@ var r = run(), s = state.step;
 Array.prototype.forEach.call($('steps').children, function (b, i) {
 if (i === s) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
 });
-show('gGeo', s === 1); show('gDepth', s === 1); show('gGeoLabels', s === 1);
-show('gRiverLabels', s === 2);
-show('gTowns', s === 0);
-show('gStake', s === 3);
 var risk = s >= 4;
-show('gZones', risk); show('gWind', s === 4 || s === 5);
+showLayer(GEO.sup, s === 1 && state.geo === 'sup'); showLayer(GEO.bed, s === 1 && state.geo === 'bed');
+showLayer(LAYERS.rivers, s === 2); showLayer(LAYERS.stake, s === 3);
+showLayer(LAYERS.zones, risk); showLayer(LAYERS.wind, s === 4 || s === 5);
 var cap = '';
-if (s === 1) cap = '<span class="key"><span class="sw" style="background:var(--basalt)"></span>Basalt</span><span class="key"><span class="sw" style="background:var(--clay)"></span>Clays and sandstone</span><span class="key"><span class="sw" style="background:var(--peat)"></span>Peat</span><span>Simplified sketch</span>';
-else if (s === 2) cap = '<span>Tonnes of phosphorus a year. Thicker line, bigger load.</span>';
+if (s === 1) cap = state.geo === 'off' ? '<span>Base map: OpenStreetMap.</span>' : '<span>' + (state.geo === 'sup' ? 'Surface deposits' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>';
+else if (s === 2) cap = '<span>Tonnes of phosphorus a year. Bigger dot, bigger load. Positions are approximate.</span>';
 else if (s === 3) cap = '<span class="key"><span class="sw" style="background:var(--high)"></span>Drinking water intake</span><span class="key"><span class="sw" style="background:var(--med)"></span>Fishing</span><span class="key"><span class="sw" style="background:var(--accent)"></span>Recreation</span>';
 else if (risk) cap = '<span class="key"><span class="sw" style="background:var(--low)"></span>L low</span><span class="key"><span class="sw" style="background:var(--med)"></span>M medium</span><span class="key"><span class="sw" style="background:var(--high)"></span>H high</span><span>' + (s === 4 ? 'Risk today' : s === 5 ? 'Risk on day ' + (state.day + 1) : 'Worst risk in the next 5 days') + '</span>';
-else cap = '<span>Schematic map, north at the top. Not for navigation.</span>';
+else cap = '<span>Base map: OpenStreetMap. Pinch or use the buttons to zoom.</span>';
 $('mapcap').innerHTML = cap;
 if (s === 4) { paintZones(r.today.map(level)); setWind(r.todayW || r.wx[29]); }
 if (s === 5) { paintZones(r.outlook[state.day].zones.map(function (c) { return c.lv; })); setWind(r.outlook[state.day].wind); }
@@ -286,6 +285,7 @@ document.addEventListener('click', function (e) {
 var t = e.target.closest ? e.target.closest('button') : null;
 if (!t) return;
 if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; }
+else if (t.dataset.geo) state.geo = t.dataset.geo;
 else if (t.dataset.step != null) state.step = +t.dataset.step;
 else if (t.dataset.day != null) state.day = +t.dataset.day;
 else if (t.id === 'prevBtn') state.step = Math.max(0, state.step - 1);
