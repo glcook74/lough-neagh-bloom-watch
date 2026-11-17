@@ -19,8 +19,18 @@ module.exports = async function (req, res) {
     var dateField = (lay.fields || []).filter(function (f) { return f.type === 'esriFieldTypeDate'; }).map(function (f) { return f.name; })[0];
     out.dateField = dateField;
     out.count = await j(base + '/' + id + '/query?where=1%3D1&returnCountOnly=true&f=json');
-    var s = await j(base + '/' + id + '/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&resultRecordCount=3&f=json' + (dateField ? '&orderByFields=' + dateField + '%20DESC' : ''));
-    out.sample = (s.features || []).slice(0, 3); out.sampleErr = s.error;
+    var near = '&geometry=-6.75,54.44,-6.10,54.80&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects';
+    out.desc2 = (lay.description || '').slice(0, 400);
+    out.renderer = lay.drawingInfo && lay.drawingInfo.renderer && { type: lay.drawingInfo.renderer.type, field: lay.drawingInfo.renderer.field1, values: (lay.drawingInfo.renderer.uniqueValueInfos || []).slice(0, 40).map(function (u) { return [u.value, u.label, u.symbol && u.symbol.color]; }) };
+    out.nearCount = await j(base + '/' + id + '/query?where=1%3D1' + near + '&returnCountOnly=true&f=json');
+    var s = await j(base + '/' + id + '/query?where=1%3D1' + near + '&outFields=*&returnGeometry=false&resultRecordCount=' + (q.n || 3) + '&f=json');
+    out.sample = (s.features || []).map(function (f) { return f.attributes; }); out.sampleErr = s.error;
+    if (q.distinct) { var dd = await j(base + '/' + id + '/query?where=1%3D1' + near + '&outFields=' + q.distinct + '&returnDistinctValues=true&returnGeometry=false&f=json'); out.distinct = (dd.features || []).map(function (f) { return f.attributes[q.distinct]; }).slice(0, 80); }
+    if (q.size) { var gg = await fetch(base + '/' + id + '/query?where=1%3D1' + near + '&outFields=OBJECTID&returnGeometry=true&outSR=4326&geometryPrecision=4&maxAllowableOffset=' + q.size + '&f=geojson'); var tx = await gg.text(); out.geojsonBytes = tx.length; }
+  } else if (q.what === 'wms') {
+    try { var r2 = await fetch(q.url + (q.url.indexOf('?') < 0 ? '?' : '&') + 'service=WMS&request=GetCapabilities'); var x = await r2.text(); out.status = r2.status; out.len = x.length;
+      var re = /<Layer[^>]*>\s*<Name>([^<]*)<\/Name>\s*<Title>(?:<!\[CDATA\[)?([^<\]]*)/g, m, ls = []; while ((m = re.exec(x))) ls.push([m[1], m[2]]); out.layers = ls.slice(0, 40);
+      out.crs3857 = x.indexOf('EPSG:3857') >= 0; out.access = (x.match(/<(Fees|AccessConstraints)>[^<]{0,300}/g) || []); } catch (e) { out.error = String(e); }
   } else if (q.what === 'meteo') {
     var m = await j('https://api.open-meteo.com/v1/forecast?latitude=54.62&longitude=-6.41&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,precipitation,sunshine_duration&past_days=30&forecast_days=1&wind_speed_unit=mph&timezone=UTC');
     out.keys = Object.keys(m); out.units = m.hourly_units; out.n = m.hourly && m.hourly.time.length;
