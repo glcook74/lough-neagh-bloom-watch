@@ -18,6 +18,8 @@ There is no build step. Vercel serves these files as they are.
 
 ## Map
 
+The map is the main feature. The **Map layers** box under it switches the view (map, Sentinel-2 cloudless satellite image from EOX, or a NASA daily photo) and turns any data layer on or off. The seven-step tour switches on suitable layers for each step.
+
 The map uses Leaflet with OpenStreetMap as the base map and the Geological Survey of Northern Ireland 1:250,000 geology layers (surface deposits and bedrock) from its public map service. Marker positions for rivers, shores and places are approximate.
 
 ## Open data

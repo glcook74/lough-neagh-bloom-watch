@@ -59,7 +59,18 @@ var LV = ['Low', 'Medium', 'High'];
 var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 var YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-var state = { scn: 'B', step: 0, day: 0, geo: 'sup', base: 'map', satDate: YESTERDAY, land: 'rivers' };
+var state = { scn: 'B', step: 0, day: 0, base: 'map', satDate: YESTERDAY, shade: 'none', on: {} };
+/* Each step of the tour switches on the layers that suit it. The reader can then change them freely. */
+function preset() {
+var s = state.step, live = state.scn === 'L' && !!LIVE;
+state.shade = s === 1 ? 'sup' : 'none';
+state.on = { rivers: s === 2, works: s === 2, stake: s === 3, zones: s >= 4, buoys: s === 4 && live, algae: s === 4 && live, fields: false };
+}
+function landMode() { return state.shade === 'basins' ? 'basins' : state.shade === 'farms' ? 'farms' : state.on.fields ? 'fields' : 'rivers'; }
+function setLand(m) {
+state.shade = m === 'basins' || m === 'farms' ? m : 'none';
+state.on.fields = m === 'fields'; state.on.rivers = m === 'rivers'; state.on.works = m === 'rivers';
+}
 var DATA = null, LAND = null;
 var cache = {};
 var LIVE = null;
@@ -77,7 +88,7 @@ function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 function zoneById(id) { for (var i = 0; i < ZONES.length; i++) if (ZONES[i].id === id) return i; return -1; }
 /* ---------- map ---------- */
-var MAP = null, GEO = {}, LAYERS = {}, zoneMarkers = {}, windMarker = null, SAT = null;
+var MAP = null, GEO = {}, LAYERS = {}, zoneMarkers = {}, windMarker = null, SATS = {};
 function mk(html, size) { return L.divIcon({ html: html, className: 'mk', iconSize: [size, size], iconAnchor: [size / 2, size / 2] }); }
 function zoneIcon(z, lv) { return mk('<span class="zm l' + lv + '">' + LV[lv].charAt(0) + '</span><span class="zlab ' + ZPOS[z.id][1] + '">' + z.short + '</span>', 22); }
 function windIcon(toward) {
@@ -87,11 +98,11 @@ function buildMap() {
 if (!window.L) { $('map').innerHTML = '<p class="mapfail">The map could not load. The rest of the page still works.</p>'; return; }
 MAP = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, minZoom: 8, maxZoom: 15, scrollWheelZoom: false, dragging: !L.Browser.mobile });
 MAP.attributionControl.setPrefix(false);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(MAP);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, zIndex: 1, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(MAP);
 MAP.fitBounds(BOUNDS);
 var credit = 'Contains Geological Survey of Northern Ireland materials &copy; Crown Copyright ' + new Date().getFullYear();
-GEO.sup = L.tileLayer.wms(GSNI, { layers: '6', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.6, attribution: credit });
-GEO.bed = L.tileLayer.wms(GSNI, { layers: '5', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.6, attribution: credit });
+GEO.sup = L.tileLayer.wms(GSNI, { layers: '6', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.6, zIndex: 5, attribution: credit });
+GEO.bed = L.tileLayer.wms(GSNI, { layers: '5', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.6, zIndex: 5, attribution: credit });
 var rm = RIVERS.map(function (r) {
 var d = Math.round(10 + r.t / 173 * 16);
 return L.marker(r.ll, { interactive: false, icon: mk('<span class="rdot" style="width:' + d + 'px;height:' + d + 'px"></span><span class="zlab ' + r.side + '">' + r.name + ' <i>' + r.t + ' t</i></span>', d) });
@@ -105,7 +116,8 @@ return L.marker(s.ll, { title: s.n, alt: s.n, icon: mk('<span class="sm ' + s.ty
 LAYERS.zones = L.layerGroup(ZONES.map(function (z) {
 return (zoneMarkers[z.id] = L.marker(ZPOS[z.id][0], { title: z.name, alt: z.name, icon: zoneIcon(z, 0) }));
 }));
-SAT = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg', { date: state.satDate, maxNativeZoom: 9, maxZoom: 15, attribution: 'Satellite imagery: NASA EOSDIS GIBS' });
+SATS.daily = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg', { date: state.satDate, maxNativeZoom: 9, maxZoom: 15, zIndex: 2, attribution: 'Daily photo: NASA EOSDIS GIBS' });
+SATS.sat = L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg', { maxNativeZoom: 15, maxZoom: 15, zIndex: 2, attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2024)' });
 windMarker = L.marker(CENTRE, { interactive: false, keyboard: false, zIndexOffset: -500, icon: windIcon(0) });
 LAYERS.wind = L.layerGroup([windMarker]);
 }
@@ -142,7 +154,7 @@ MAP.on('moveend', updateFields);
 }
 function updateFields() {
 if (!MAP || !fieldsLayer) return;
-var on = state.step === 2 && state.land === 'fields';
+var on = !!state.on.fields;
 showLayer(fieldsLayer, on);
 if (L.Browser.mobile) { if (on) MAP.dragging.enable(); else MAP.dragging.disable(); }
 if (!on) { if (wasFields) { wasFields = false; MAP.closePopup(); MAP.fitBounds(BOUNDS); } return; }
@@ -218,10 +230,10 @@ return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Water temp
 }
 function landSeg() {
 return '<div class="seg" role="group" aria-label="What to show on the map">' +
-[['rivers', 'River loads'], ['basins', 'Basins'], ['farms', 'Farming'], ['fields', 'Fields']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (state.land === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
+[['rivers', 'River loads'], ['basins', 'Basins'], ['farms', 'Farming'], ['fields', 'Fields']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (landMode() === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
 }
 function landPanel() {
-var h = '', m = state.land;
+var h = '', m = landMode();
 if (!LAND) return '<p class="small">Loading the land data from DAERA. If this message stays, the service is not answering just now.</p>';
 if (m === 'basins') {
 if (!LAND.basins) return '<p class="small">The basin outlines could not be loaded just now.</p>';
@@ -266,16 +278,12 @@ h += '<p>Lough Neagh is big, shallow and slow to empty. Those three things expla
 '<div><dt>Shoreline</dt><dd>about 125 km</dd></div><div><dt>Share of NI that drains into it</dt><dd>42%</dd></div>' +
 '<div><dt>Time water stays in the lough</dt><dd>16 months</dd></div><div><dt>Share of NI drinking water</dt><dd>about 40%</dd></div>' +
 '</dl><p class="small">Six main rivers flow in. Only one, the Lower Bann at Toome, flows out.</p>' +
-'<h3>See it from space</h3>' +
-'<div class="seg" role="group" aria-label="Map view">' +
-[['map', 'Map'], ['sat', 'Satellite photo']].map(function (g) { return '<button type="button" id="base_' + g[0] + '" data-base="' + g[0] + '" aria-pressed="' + (state.base === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>' +
-(state.base === 'sat' ? '<p class="satrow"><label for="satDate">Photo date</label> <input type="date" id="satDate" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '"></p>' +
-'<p class="small">A daily photo from NASA\'s Terra satellite. Each dot of the picture covers about 250 metres, so it shows the whole lough but no fine detail. Cloud often hides the lough, so try other dates. A strong bloom shows as green swirls in the water.</p>' : '');
+'<p class="small">Under the map, <strong>View</strong> switches to a satellite image, and <strong>Shade by</strong> and <strong>Show</strong> add any of the data layers. Each step of this tour also switches on the layers that go with it.</p>';
 } else if (s === 1) {
 h += '<p>The coloured layer is the Geological Survey of Northern Ireland\'s 1:250,000 map. Where the surface is clay or peat, rain drains poorly and runs off the fields quickly, taking phosphorus with it.</p>' +
 '<div class="seg" role="group" aria-label="Geology layer">' +
-[['sup', 'Surface deposits'], ['bed', 'Bedrock'], ['off', 'Map only']].map(function (g) { return '<button type="button" id="geo_' + g[0] + '" data-geo="' + g[0] + '" aria-pressed="' + (state.geo === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>' +
-(state.geo !== 'off' ? '<details class="legendbox"><summary>What the colours mean</summary><div class="legendimg"><img alt="Key to the geology colours, from the Geological Survey of Northern Ireland" loading="lazy" src="' + GSNI + '?service=WMS&amp;version=1.3.0&amp;request=GetLegendGraphic&amp;format=image/png&amp;layer=' + (state.geo === 'sup' ? '6' : '5') + '"></div></details>' : '') +
+[['sup', 'Surface deposits'], ['bed', 'Bedrock'], ['off', 'Map only']].map(function (g) { return '<button type="button" id="geo_' + g[0] + '" data-geo="' + g[0] + '" aria-pressed="' + ((state.shade === 'sup' || state.shade === 'bed' ? state.shade : 'off') === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>' +
+(state.shade === 'sup' || state.shade === 'bed' ? '<details class="legendbox"><summary>What the colours mean</summary><div class="legendimg"><img alt="Key to the geology colours, from the Geological Survey of Northern Ireland" loading="lazy" src="' + GSNI + '?service=WMS&amp;version=1.3.0&amp;request=GetLegendGraphic&amp;format=image/png&amp;layer=' + (state.shade === 'sup' ? '6' : '5') + '"></div></details>' : '') +
 '<ul class="list">' +
 '<li><strong>Shallow water</strong><span class="sub">Warms fast, and a strong wind can stir the bed all the way up.</span></li>' +
 '<li><strong>Phosphorus in the mud</strong><span class="sub">Decades of nutrients sit in the sediment. AFBI scientists have said they could keep feeding the lough for around 40 years.</span></li>' +
@@ -283,7 +291,7 @@ h += '<p>The coloured layer is the Geological Survey of Northern Ireland\'s 1:25
 '</ul>';
 } else if (s === 2) {
 h += landSeg();
-if (state.land !== 'rivers') { h += landPanel(); } else {
+if (landMode() !== 'rivers') { h += landPanel(); } else {
 var total = 0; RIVERS.forEach(function (rv) { total += rv.t; });
 h += '<p>Blue-green algae feed on phosphorus. This is how much each river is estimated to carry into the lough in a year. Bigger dots on the map mean bigger loads.</p><div class="bars">';
 RIVERS.concat([{ name: 'Smaller rivers', t: 66 }, { name: 'Straight into lough', t: 65 }]).forEach(function (rv) {
@@ -384,6 +392,38 @@ h += '<p class="small">If you see a bloom, stay out of the water, keep pets away
 }
 return h;
 }
+/* ---------- layer controls and map caption ---------- */
+function chip(attr, val, label, pressed, disabled) {
+return '<button type="button" class="chip" id="chip_' + attr + '_' + val + '" data-' + attr + '="' + val + '" aria-pressed="' + !!pressed + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+}
+function layersHtml() {
+var O = state.on, missing = { basins: !LAYERS.basins, farms: !LAYERS.farms, algae: !LAYERS.algae, buoys: !LAYERS.buoys, works: !LAYERS.works, fields: !fieldsLayer };
+return '<div class="lrow"><span class="llab">View</span>' +
+[['map', 'Map'], ['sat', 'Satellite'], ['daily', 'Daily photo']].map(function (g) { return chip('base', g[0], g[1], state.base === g[0]); }).join('') +
+(state.base === 'daily' ? '<input type="date" id="satDate" aria-label="Date of the daily photo" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '">' : '') + '</div>' +
+'<div class="lrow"><span class="llab">Shade by</span>' +
+[['none', 'Nothing'], ['sup', 'Surface geology'], ['bed', 'Bedrock'], ['basins', 'Basins'], ['farms', 'Farming']].map(function (g) { return chip('shade', g[0], g[1], state.shade === g[0], missing[g[0]]); }).join('') + '</div>' +
+'<div class="lrow"><span class="llab">Show</span>' +
+[['zones', 'Bloom risk'], ['algae', 'Confirmed algae'], ['buoys', 'Buoys'], ['rivers', 'River loads'], ['works', 'Treatment works'], ['fields', 'Field risk'], ['stake', 'Places at stake']].map(function (g) { return chip('on', g[0], g[1], O[g[0]], missing[g[0]]); }).join('') + '</div>';
+}
+function captionHtml(s) {
+var O = state.on, sh = state.shade, c = [];
+var sw = function (col, dot) { return '<span class="sw' + (dot ? ' dot' : '') + '" style="background:' + col + '"></span>'; };
+if (state.base === 'sat') c.push('<span>Satellite: Sentinel-2 cloudless 2024, a cloud-free blend of a year of images. It is not today.</span>');
+if (state.base === 'daily') c.push('<span>Daily photo for ' + fmtDate(state.satDate) + ' ' + state.satDate.slice(0, 4) + ', NASA Terra. Coarse, and cloud often hides the lough.</span>');
+if (sh === 'sup' || sh === 'bed') c.push('<span>' + (sh === 'sup' ? 'Surface geology' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>');
+if (sh === 'basins') c.push('<span class="key">Phosphorus per hectare a year: 0.8 kg ' + OCHRE.map(function (x) { return sw(x); }).join('') + ' 1.2 kg</span><span class="key">' + sw('#9aa3a8') + 'Drains elsewhere</span>');
+if (sh === 'farms' && LAND && LAND.farms) c.push('<span class="key">Cattle per hectare farmed, 2019: ' + farmRange()[0].toFixed(1) + ' ' + BLUES.map(function (x) { return sw(x); }).join('') + ' ' + farmRange()[1].toFixed(1) + '</span>');
+if (O.fields) c.push('<span class="key">Field risk: ' + [1, 2, 3].map(function (k) { return sw(RISK[k][1]) + RISK[k][0]; }).join(' ') + '</span>');
+if (O.zones) c.push('<span class="key">Bloom risk ' + (s === 5 ? 'on day ' + (state.day + 1) : s === 6 ? 'at worst in 5 days' : 'today') + ': ' + sw('var(--low)') + 'L ' + sw('var(--med)') + 'M ' + sw('var(--high)') + 'H</span>');
+if (O.algae) c.push('<span class="key">' + sw('#b0206a', true) + 'Confirmed algae, last 12 months</span>');
+if (O.buoys) c.push('<span class="key">' + sw('#174a63') + 'B buoy</span>');
+if (O.rivers) c.push('<span class="key">' + sw('#174a63', true) + 'Phosphorus by river, bigger dot is more</span>');
+if (O.works) c.push('<span class="key">' + sw('#5b6770', true) + 'Treatment works</span>');
+if (O.stake) c.push('<span class="key">' + sw('var(--high)') + 'Water intake</span><span class="key">' + sw('var(--med)') + 'Fishing</span><span class="key">' + sw('var(--accent)') + 'Recreation</span>');
+if (!c.length) c.push('<span>Base map: OpenStreetMap. Pinch or use the buttons to zoom. Marker positions are approximate.</span>');
+return c.join('');
+}
 /* ---------- render ---------- */
 function render() {
 var r = run(), s = state.step;
@@ -391,30 +431,21 @@ var r = run(), s = state.step;
 Array.prototype.forEach.call($('steps').children, function (b, i) {
 if (i === s) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
 });
-var risk = s >= 4;
-showLayer(GEO.sup, s === 1 && state.geo === 'sup'); showLayer(GEO.bed, s === 1 && state.geo === 'bed');
-showLayer(LAYERS.rivers, s === 2 && state.land === 'rivers'); showLayer(LAYERS.stake, s === 3);
-showLayer(LAYERS.basins, s === 2 && state.land === 'basins'); showLayer(LAYERS.farms, s === 2 && state.land === 'farms');
+var O = state.on, sh = state.shade;
+showLayer(SATS.sat, state.base === 'sat'); showLayer(SATS.daily, state.base === 'daily');
+showLayer(GEO.sup, sh === 'sup'); showLayer(GEO.bed, sh === 'bed');
+showLayer(LAYERS.basins, sh === 'basins'); showLayer(LAYERS.farms, sh === 'farms');
 updateFields();
-showLayer(LAYERS.zones, risk); showLayer(LAYERS.wind, s === 4 || s === 5);
-showLayer(SAT, s === 0 && state.base === 'sat');
-showLayer(LAYERS.works, s === 2 && state.land === 'rivers');
-showLayer(LAYERS.algae, s === 4 && !!r.live); showLayer(LAYERS.buoys, s === 4 && !!r.live);
-var cap = '';
-if (s === 1) cap = state.geo === 'off' ? '<span>Base map: OpenStreetMap.</span>' : '<span>' + (state.geo === 'sup' ? 'Surface deposits' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>';
-else if (s === 2 && state.land === 'basins') cap = '<span>Phosphorus per hectare a year:</span><span class="key">0.8 kg ' + OCHRE.map(function (c) { return '<span class="sw" style="background:' + c + '"></span>'; }).join('') + ' 1.2 kg</span><span class="key"><span class="sw" style="background:#9aa3a8"></span>Drains elsewhere</span>';
-else if (s === 2 && state.land === 'farms') cap = LAND && LAND.farms ? '<span>Cattle per hectare farmed:</span><span class="key">' + farmRange()[0].toFixed(1) + ' ' + BLUES.map(function (c) { return '<span class="sw" style="background:' + c + '"></span>'; }).join('') + ' ' + farmRange()[1].toFixed(1) + '</span><span>Farm census 2019</span>' : '';
-else if (s === 2 && state.land === 'fields') cap = '<span>Risk of losing nutrients to water:</span>' + [1, 2, 3].map(function (k) { return '<span class="key"><span class="sw" style="background:' + RISK[k][1] + '"></span>' + RISK[k][0] + '</span>'; }).join('') + '<span>DAERA</span>';
-else if (s === 2) cap = '<span>Tonnes of phosphorus a year. Bigger dot, bigger load. Positions are approximate.</span>' + (LAYERS.works ? '<span class="key"><span class="sw dot" style="background:#5b6770"></span>Treatment works</span>' : '');
-else if (s === 3) cap = '<span class="key"><span class="sw" style="background:var(--high)"></span>Drinking water intake</span><span class="key"><span class="sw" style="background:var(--med)"></span>Fishing</span><span class="key"><span class="sw" style="background:var(--accent)"></span>Recreation</span>';
-else if (risk) cap = '<span class="key"><span class="sw" style="background:var(--low)"></span>L low</span><span class="key"><span class="sw" style="background:var(--med)"></span>M medium</span><span class="key"><span class="sw" style="background:var(--high)"></span>H high</span><span>' + (s === 4 ? 'Risk today' : s === 5 ? 'Risk on day ' + (state.day + 1) : 'Worst risk in the next 5 days') + '</span>' + (s === 4 && r.live && LAYERS.buoys ? '<span class="key"><span class="sw" style="background:#174a63"></span>B buoy</span>' : '') + (s === 4 && r.live && LAYERS.algae ? '<span class="key"><span class="sw dot" style="background:#b0206a"></span>Confirmed algae, last 12 months</span>' : '');
-else cap = state.base === 'sat' ? '<span>Satellite photo for ' + fmtDate(state.satDate) + ' ' + state.satDate.slice(0, 4) + ': NASA Terra MODIS, from NASA Worldview GIBS.</span>' : '<span>Base map: OpenStreetMap. Pinch or use the buttons to zoom.</span>';
-$('mapcap').innerHTML = cap;
-if (s === 4) { paintZones(r.today.map(level)); setWind(r.todayW || r.wx[29]); }
+showLayer(LAYERS.rivers, !!O.rivers); showLayer(LAYERS.works, !!O.works); showLayer(LAYERS.stake, !!O.stake);
+showLayer(LAYERS.algae, !!O.algae); showLayer(LAYERS.buoys, !!O.buoys);
+showLayer(LAYERS.zones, !!O.zones); showLayer(LAYERS.wind, !!O.zones && (s === 4 || s === 5));
+if (O.zones) {
 if (s === 5) { paintZones(r.outlook[state.day].zones.map(function (c) { return c.lv; })); setWind(r.outlook[state.day].wind); }
-if (s === 6) {
-paintZones(ZONES.map(function (z, zi) { var m = 0; r.outlook.forEach(function (o) { m = Math.max(m, o.zones[zi].lv); }); return m; }));
+else if (s === 6) paintZones(ZONES.map(function (z, zi) { var m = 0; r.outlook.forEach(function (o) { m = Math.max(m, o.zones[zi].lv); }); return m; }));
+else { paintZones(r.today.map(level)); setWind(r.todayW || r.wx[29]); }
 }
+$('layers').innerHTML = layersHtml();
+$('mapcap').innerHTML = captionHtml(s);
 $('panel').innerHTML = '<div><p class="stepno">Step ' + (s + 1) + ' of ' + STEPS.length + '</p><h2>' + (s === 4 && r.live ? 'The lough today' : STEPS[s]) + '</h2></div>' + sceneHtml(r) +
 '<div class="nav"><button type="button" id="prevBtn" ' + (s === 0 ? 'disabled' : '') + '>Back</button><button type="button" class="next" id="nextBtn" ' + (s === STEPS.length - 1 ? 'disabled' : '') + '>' + (s === STEPS.length - 1 ? 'End' : 'Next: ' + STEPS[s + 1]) + '</button></div>';
 }
@@ -445,18 +476,21 @@ note.textContent = 'Live Met Office forecast loaded' + (j.modelRunDate ? ', mode
 function start() {
 $('steps').innerHTML = STEPS.map(function (t, i) { return '<button type="button" id="step' + i + '" data-step="' + i + '" aria-label="Step ' + (i + 1) + ': ' + t + '">' + (i + 1) + '</button>'; }).join('');
 buildMap();
+preset();
 document.addEventListener('click', function (e) {
 var t = e.target.closest ? e.target.closest('button') : null;
 if (!t) return;
-if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; }
-else if (t.dataset.geo) state.geo = t.dataset.geo;
+if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; preset(); }
+else if (t.dataset.geo) state.shade = t.dataset.geo === 'off' ? 'none' : t.dataset.geo;
 else if (t.dataset.base) state.base = t.dataset.base;
-else if (t.dataset.land) state.land = t.dataset.land;
+else if (t.dataset.shade) state.shade = t.dataset.shade;
+else if (t.dataset.on) state.on[t.dataset.on] = !state.on[t.dataset.on];
+else if (t.dataset.land) setLand(t.dataset.land);
 else if (t.dataset.goto) { if (MAP) { if (t.dataset.goto === 'all') MAP.fitBounds(BOUNDS); else MAP.setView([GOTO[+t.dataset.goto][1], GOTO[+t.dataset.goto][2]], 13.5); } return; }
-else if (t.dataset.step != null) state.step = +t.dataset.step;
+else if (t.dataset.step != null) { state.step = +t.dataset.step; preset(); }
 else if (t.dataset.day != null) state.day = +t.dataset.day;
-else if (t.id === 'prevBtn') state.step = Math.max(0, state.step - 1);
-else if (t.id === 'nextBtn') state.step = Math.min(STEPS.length - 1, state.step + 1);
+else if (t.id === 'prevBtn') { state.step = Math.max(0, state.step - 1); preset(); }
+else if (t.id === 'nextBtn') { state.step = Math.min(STEPS.length - 1, state.step + 1); preset(); }
 else return;
 var id = t.id; render();
 if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
@@ -464,7 +498,7 @@ if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
 document.addEventListener('change', function (e) {
 if (e.target && e.target.id === 'satDate' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) && e.target.value <= YESTERDAY) {
 state.satDate = e.target.value;
-if (SAT) { SAT.options.date = state.satDate; SAT.redraw(); }
+if (SATS.daily) { SATS.daily.options.date = state.satDate; SATS.daily.redraw(); }
 render();
 if ($('satDate')) $('satDate').focus({ preventScroll: true });
 }

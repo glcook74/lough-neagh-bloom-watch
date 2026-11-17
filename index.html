@@ -16,12 +16,23 @@
 <header>
 <p class="eyebrow">Lough Neagh · blue-green algae</p>
 <h1>Bloom Watch</h1>
-<p class="lede">How weather, water and what flows in off the land combine to turn the lough green, and which shore the wind will push it to next.</p>
-<p class="notice"><strong>Demonstration model.</strong> The lough facts are real. The three weather stories are made up. The live option uses the real Met Office forecast, real past weather and DAERA monitoring data. Either way the bloom risk scores are an untested illustration. Do not use this page to decide if the water is safe.</p>
+<p class="lede">One map of the lough, with the weather, water, land and satellite data behind its blue-green algae.</p>
+<p class="notice"><strong>Demonstration model.</strong> The map data is real. The bloom risk scores are an untested illustration, and three of the four weather choices are made up. Do not use this page to decide if the water is safe.</p>
 </header>
-<section class="controls" aria-label="Controls">
+<div class="stage">
+<figure class="mapbox">
+<div id="map" role="group" aria-label="Map of Lough Neagh"></div>
+<details class="layerbox" open>
+<summary>Map layers</summary>
+<div class="layers" id="layers"></div>
+</details>
+<figcaption class="mapcap" id="mapcap"></figcaption>
+</figure>
+<div class="side">
+<section class="controls" aria-label="Guided tour">
+<nav class="steps" id="steps" aria-label="Steps"></nav>
 <div>
-<p class="field-label" id="scnLabel">Choose a weather story, or the live forecast</p>
+<p class="field-label" id="scnLabel">Weather behind the bloom risk</p>
 <div class="scn" role="group" aria-labelledby="scnLabel">
 <button type="button" id="scnA" data-scn="A">Cool and breezy</button>
 <button type="button" id="scnB" data-scn="B">Wet, then hot and calm</button>
@@ -30,14 +41,9 @@
 </div>
 <p class="small" id="liveNote" role="status">Loading the live Met Office forecast.</p>
 </div>
-<nav class="steps" id="steps" aria-label="Steps"></nav>
 </section>
-<div class="stage">
-<figure class="mapbox">
-<div id="map" role="group" aria-label="Map of Lough Neagh"></div>
-<figcaption class="mapcap" id="mapcap"></figcaption>
-</figure>
 <section class="panel" id="panel"></section>
+</div>
 </div>
 <footer>
 <h3>Turning this into a real forecast</h3>
@@ -56,7 +62,8 @@
 <li>Past 30 days of weather: Open-Meteo weather model archive (open-meteo.com), CC BY 4.0.</li>
 <li>Buoy readings, confirmed blue-green algae locations and treatment works: DAERA open data, Open Government Licence v3.0. Buoy readings are provisional and not validated.</li>
 <li>Basin outlines, the 2019 farm census and field risk scores: DAERA open data, Open Government Licence v3.0. The farm census is a National Statistics publication, © Crown Copyright 2021.</li>
-<li>Satellite photos: NASA Terra MODIS, through NASA EOSDIS GIBS.</li>
+<li>Satellite view: Sentinel-2 cloudless 2024 (s2maps.eu) by EOX IT Services GmbH, contains modified Copernicus Sentinel data 2024, licensed CC BY-NC-SA 4.0 for non-commercial use.</li>
+<li>Daily photos: NASA Terra MODIS, through NASA EOSDIS GIBS.</li>
 <li>Geology layers: Geological Survey of Northern Ireland 1:250,000 mapping. Contains Geological Survey of Northern Ireland materials © Crown Copyright, under the Open Government Licence.</li>
 <li>Base map: © OpenStreetMap contributors.</li>
 <li>Markers for rivers, shores and places are positioned approximately.</li>
