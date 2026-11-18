@@ -282,3 +282,11 @@ table.sat.inv thead th { white-space: nowrap; padding-left: 8px; padding-right: 
 .rivsite .charts { max-width: 820px; }
 .rivacts { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 10px; max-width: 74ch; }
 .rivacts .who { display: block; font-size: 0.84rem; color: var(--muted); margin-top: 2px; }
+/* fold-away sections */
+.fold { border-top: 1px solid var(--line); }
+.fold > summary { cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 1.05rem; color: var(--ink); padding: 12px 0; min-height: 44px; }
+.fold > summary:hover { color: var(--accent); }
+.fold[open] > summary { padding-bottom: 6px; }
+.fold > ul { margin-bottom: 12px; }
+footer .fold > summary { font-family: var(--body); font-weight: 600; font-size: 0.95rem; }
+footer { gap: 0; }

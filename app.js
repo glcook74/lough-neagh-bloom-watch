@@ -400,12 +400,12 @@ h += '<div class="readout"><span>Farming pressure</span><span class="badge l' + 
 h += '<div class="tablewrap"><table class="wx src"><thead><tr><th scope="col" class="lh">Farming</th><th scope="col">Value</th><th scope="col">Rank</th></tr></thead><tbody>' + indRows(FARM_IND, b) + '</tbody>' +
 '<thead><tr><th scope="col" class="lh">Sewage</th><th scope="col">Value</th><th scope="col">Rank</th></tr></thead><tbody>' + indRows(SEWAGE_IND, b) + '</tbody></table></div>' +
 '<p class="small">Rank 1st means the highest of the ' + N + ' basins. Each pressure level is the average of the ranks in its table.</p>' +
-'<h3>What this does and does not show</h3><ul class="notes">' +
+'<details class="fold"><summary>What this does and does not show</summary><ul class="notes">' +
 '<li>It shows where pressure is high compared with the other basins. It does not measure how much pollution each source causes, and it cannot point to a farm, a home or a works.</li>' +
 '<li>Livestock numbers are published by council area, so each area\'s animals are shared between basins by land area. That is an estimate.</li>' +
 '<li>The field risk map covers only some farmland, storm overflow spills are NI Water\'s predictions, and the datasets span 2007 to 2024.</li>' +
 '<li>Septic tanks, industry and the phosphorus already in the lough bed are not counted. The lough shore basin\'s area leaves out the lough itself.</li>' +
-'</ul>';
+'</ul></details>';
 return h;
 }
 function landSeg() {
@@ -650,14 +650,14 @@ row('Storm overflows classed unsatisfactory', function (b) { return b.unsat; }) 
 h += '</tbody></table></div>';
 /* whole catchment */
 h += '<h3>The whole catchment</h3><p>AFBI\'s modelling for the whole catchment puts 61% of the phosphorus reaching the lough down to agriculture, 29% to wastewater, 9% to other sources and 1.3% to septic tanks. The basin comparison above is a separate check using different data, and it points the same way: the basins with the most farming and sewage pressure have the most phosphorus in their rivers.</p>' +
-'<h3>What this does and does not show</h3><ul class="notes">' +
+'<details class="fold"><summary>What this does and does not show</summary><ul class="notes">' +
 '<li>It ranks pressure. It does not measure how much pollution each source causes, and it cannot point to a farm, a home or a works.</li>' +
 '<li>Farming and sewage pressure tend to be high in the same basins, so this data cannot cleanly separate the two.</li>' +
 '<li>Seven basins is a small number. A difference of one rank is not meaningful.</li>' +
 '<li>Livestock is published by council area and shared between basins by land area, which is an estimate. The field risk map covers only some farmland. Storm overflow spills are NI Water\'s predictions. The datasets span 2007 to 2024.</li>' +
 '<li>Septic tanks, industry and the phosphorus already in the lough bed are not counted. The lough shore basin\'s area leaves out the lough itself.</li>' +
 '<li>The river test data is published raw and may contain errors. Readings of 5 mg/l or more and sites with fewer than six readings are left out.</li>' +
-'</ul><p class="small">Sources: DAERA open data under the Open Government Licence v3.0 (river tests 1990 to 2024, farm census 2019, agricultural risk map, pollution incidents 2011 to 2024, NI Water storm overflows and treatment works May 2024, Local Management Areas) and AFBI modelling, 2021 reference year, provisional.</p>';
+'</ul></details><p class="small">Sources: DAERA open data under the Open Government Licence v3.0 (river tests 1990 to 2024, farm census 2019, agricultural risk map, pollution incidents 2011 to 2024, NI Water storm overflows and treatment works May 2024, Local Management Areas) and AFBI modelling, 2021 reference year, provisional.</p>';
 el.innerHTML = h;
 }
 /* ---------- key areas: the specific places the data flags ---------- */
@@ -828,13 +828,13 @@ return hotRow(i.id, 's', false, esc(i.x.name), basinLabel(i.x.basin) + ' basin �
 h += '<div><h3>Most pollution incidents</h3><p class="small">One-kilometre squares with the most incidents recorded by DAERA, 2011 to 2024.</p><ol class="hotlist">' + I.map(function (i) {
 return hotRow(i.id, 'i', false, 'Square in the ' + basinLabel(i.x.basin) + ' basin', incWho(i.x) + ' · ' + i.x.recent + ' since 2020', i.x.t + ' incidents');
 }).join('') + '</ol></div>';
-h += '<div><h3>How to read this</h3><ul class="notes">' +
+h += '<div><details class="fold"><summary>How to read this</summary><ul class="notes">' +
 '<li>A river test measures everything upstream of that point, so the cause can be some distance away.</li>' +
 '<li>Storm overflow figures are computer predictions by NI Water. No overflow in this dataset is monitored.</li>' +
 '<li>Incident counts depend on people reporting. A busy town will record more than a quiet valley.</li>' +
 '<li>The river test data is published raw. One bad sample can lift an average, so check the readings before naming a site.</li>' +
 '<li>Site names are tidied from DAERA\'s records, which have no spaces. Use the site code in each pin to look a site up.</li>' +
-'<li>Only the top ten of each kind are pinned (six for rising sites). Other places may be nearly as high.</li></ul></div>';
+'<li>Only the top ten of each kind are pinned (six for rising sites). Other places may be nearly as high.</li></ul></details></div>';
 return h;
 }
 function renderAreas() {
@@ -968,13 +968,13 @@ h += '<h3>The highest days</h3><p class="small">Open any of these on the main ma
 var best = -1; r.z.forEach(function (z, k) { if (z && (best < 0 || z.m > r.z[best].m)) best = k; });
 return '<tr><th scope="row">' + fmtDate(r.date) + ' ' + r.year + '</th><td>' + r.lough.m.toFixed(2) + '</td><td>' + Math.round(r.lough.h * 100) + '%</td><td class="lh">' + (best < 0 ? '' : SAT.zones[best].name) + '</td><td><button type="button" class="chip" data-invgo="' + r.date + '">Investigate</button> <button type="button" class="chip" data-satgo="' + r.date + '">See on map</button></td></tr>';
 }).join('') + '</tbody></table></div>';
-h += '<h3>How to read this</h3><ul class="notes">' +
+h += '<details class="fold"><summary>How to read this</summary><ul class="notes">' +
 '<li>The index is the Normalised Difference Chlorophyll Index. It compares two shades of red light that algae pigment reflects differently. Higher means greener, more pigmented water.</li>' +
 '<li>The 0.1 line is a working threshold chosen for this page, not an official one.</li>' +
 '<li>The satellite passes every two to three days and cloud hides most passes, so short blooms can be missed entirely.</li>' +
 '<li>Thick floating scum, haze, thin cloud and sunlight glinting off the water can all push the index up or down. A single odd day is not a pattern.</li>' +
 '<li>Mud stirred up by wind can also raise the index in shallow bays.</li>' +
-'<li>Each area is measured at about 115 m detail, so narrow bays and harbours are not resolved.</li></ul>';
+'<li>Each area is measured at about 115 m detail, so narrow bays and harbours are not resolved.</li></ul></details>';
 return h;
 }
 var MONFULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1113,13 +1113,13 @@ return '<tr><th scope="row">' + shortDate(ds[0]) + ' to ' + shortDate(ds[6]) + '
 if (M.rain && M.rain.dates.indexOf(date) > 0) { var ri = M.rain.dates.indexOf(date), sum = function (bb, n) { var s = 0; for (var i = Math.max(0, ri - n); i < ri; i++) s += bb.mm[i] || 0; return s; };
 h += '<h3>Rain over each river basin</h3><p class="small">Total rain before the day. More rain means more river water, more run-off from fields and more storm overflow spills. We do not hold river flows or 2026 river phosphorus tests, so this is the nearest stand-in.</p><div class="tablewrap"><table class="sat inv"><thead><tr><th class="lh" scope="col">Basin</th><th scope="col">Last 7 days</th><th scope="col">Last 14 days</th><th scope="col">Last 30 days</th></tr></thead><tbody>' + M.rain.basins.slice().sort(function (x, y) { return sum(y, 14) - sum(x, 14); }).map(function (bb) { return '<tr><th scope="row">' + bb.name + '</th><td>' + sum(bb, 7).toFixed(0) + ' mm</td><td>' + sum(bb, 14).toFixed(0) + ' mm</td><td>' + sum(bb, 30).toFixed(0) + ' mm</td></tr>'; }).join('') + '</tbody></table></div>'; }
 h += '<p><button type="button" class="chip" data-satgo="' + date + '">See the satellite picture for this day on the map</button></p>';
-h += '<h3>What this cannot tell you</h3><ul class="notes">' +
+h += '<details class="fold"><summary>What this cannot tell you</summary><ul class="notes">' +
 '<li>These are clues that fit together, not proof of a cause. Use them to decide where to look and what to sample.</li>' +
 '<li>There are no river flow figures and no river phosphorus tests after 2024, so a river\'s part can only be judged from rainfall and the nearest buoy.</li>' +
 '<li>Wind that carries river water along a shore also pushes algae there from the rest of the lough. The data cannot separate the two.</li>' +
 '<li>Phosphorus released from the lough bed in warm, calm weather is not measured by anything here.</li>' +
 '<li>Weather is from a weather model for the centre of the lough, not a weather station. Basin rain is taken at one point per basin.</li>' +
-'<li>The buoys sit at three fixed spots and their readings are provisional. The satellite index is not checked against water samples.</li></ul>';
+'<li>The buoys sit at three fixed spots and their readings are provisional. The satellite index is not checked against water samples.</li></ul></details>';
 return h;
 }
 function renderInv() {
@@ -1236,13 +1236,13 @@ var n = FC.now;
 h += '<h3>Early warning for ' + next + '</h3><p>The same score keeps running on each new day of weather, so this section becomes a live tracker once spring arrives.</p><dl class="invfinds">' +
 (n ? '<div><dt>Where it stands</dt><dd>On ' + longDate(n.date) + ' the score was <strong>' + n.score.toFixed(2) + '</strong> against an alarm level of ' + FC.alarmLevel.toFixed(2) + ', with the water estimated at ' + n.water.toFixed(1) + '°C. ' + (n.water < 12 ? 'The water is too cold for blooms, as expected at this time of year.' : n.score >= FC.alarmLevel ? 'That is above the alarm level.' : 'That is below the alarm level.') + '</dd></div>' : '') +
 '<div><dt>Watch for, in order</dt><dd><ol class="fcsteps"><li>Water passing <strong>18°C</strong>. Check the buoys on the Map tab.</li><li>A run of <strong>three or more</strong> warm, sunny days with wind under 9 mph.</li><li>The score crossing its alarm level.</li><li>Heavy rain over the river basins, followed by <strong>two calm days</strong>. That is the pattern before 24 August 2026.</li><li>The five-day outlook on the Map tab turning amber or red for a shore.</li></ol></dd></div></dl>';
-h += '<h3>What this cannot do</h3><ul class="notes">' +
+h += '<details class="fold"><summary>What this cannot do</summary><ul class="notes">' +
 '<li>Four seasons is a very short record. One unusual year would change these ranges.</li>' +
 '<li>The score uses weather only. It knows nothing about river phosphorus, river flow, phosphorus stored in the lough bed, or zebra mussels.</li>' +
 '<li>It is tested against the satellite index, which is itself not checked against water samples. Cloud hides most days.</li>' +
 '<li>The score was tuned to rank days in order, not to give amounts. Its number has no unit.</li>' +
 '<li>Weather records come from a weather model for the centre of the lough and run about six days behind.</li>' +
-'<li>Do not use this to decide whether water is safe. Follow DAERA and council notices.</li></ul>';
+'<li>Do not use this to decide whether water is safe. Follow DAERA and council notices.</li></ul></details>';
 return h;
 }
 function renderFc() {
@@ -1320,12 +1320,12 @@ if (I && I.sewage >= 5) act.push(['Check for misconnections and failing septic t
 if (pat && pat.kind === 'summer' && !W.length) act.push(['Look for a steady source', 'The summer peak points to something discharging all year, but no treatment works is recorded here. Septic tanks, yard drains and private discharges are the places to look.', 'NIEA catchment officers']);
 if (!act.length) act.push(['Start with better measurement', 'There is not enough here to point at a cause. A season of extra sampling would show whether this river needs attention.', 'NIEA or a local group']);
 h += '<h3>What could be looked at or fixed</h3><p class="small">Suggested from the patterns above, as questions to ask and things to check. The aim is to find causes that can be put right, not to blame anyone.</p><ol class="rivacts">' + act.map(function (a) { return '<li><strong>' + a[0] + '.</strong> ' + a[1] + ' <span class="who">Who could act: ' + a[2] + '.</span></li>'; }).join('') + '</ol>';
-h += '<h3>What this page cannot tell you</h3><ul class="notes">' +
+h += '<details class="fold"><summary>What this page cannot tell you</summary><ul class="notes">' +
 '<li>The catchment is the land DAERA assigns to this river water body. It does not include rivers upstream that flow into it, and it does not know which parts lie upstream of each test site.</li>' +
 '<li>How much phosphorus each source adds is not measured anywhere in this data. The seasonal pattern is a well-used pointer, not proof.</li>' +
 '<li>Private discharge consents, septic tanks and individual farm locations are not in DAERA\'s open data.</li>' +
 '<li>River tests are published raw and stop at 2024. The farm census is from 2019.</li>' +
-'<li>Nothing here shows that anyone has broken a rule.</li></ul>';
+'<li>Nothing here shows that anyone has broken a rule.</li></ul></details>';
 return h;
 }
 function renderRiv() {
