@@ -18,7 +18,7 @@ There is no build step. Vercel serves these files as they are.
 
 ## Tabs
 
-The page has two tabs. **Map** is the map with its layers and guided tour. **Analysis** compares the seven river basins side by side: measured phosphorus, farming and sewage pressure, charts and the full table of figures.
+The page has three tabs. **Map** is the map with its layers and guided tour. **Analysis** compares the seven river basins side by side: measured phosphorus, farming and sewage pressure, charts and the full table of figures. **Key areas** is a second map that pins the individual places the data flags (from `api/hotspots.js`): the river test sites with most phosphorus and the biggest rises, the storm overflows predicted to spill most, and the squares with most pollution incidents.
 
 ## Map
 

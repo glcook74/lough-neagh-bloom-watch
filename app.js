@@ -658,11 +658,186 @@ h += '<h3>The whole catchment</h3><p>AFBI\'s modelling for the whole catchment p
 '</ul><p class="small">Sources: DAERA open data under the Open Government Licence v3.0 (river tests 1990 to 2024, farm census 2019, agricultural risk map, pollution incidents 2011 to 2024, NI Water storm overflows and treatment works May 2024, Local Management Areas) and AFBI modelling, 2021 reference year, provisional.</p>';
 el.innerHTML = h;
 }
+/* ---------- key areas: the specific places the data flags ---------- */
+var HOT = null, HOTFAIL = false, HOTMAP = null, HOTPIN = {}, HOTGRP = {}, HOTCL = [], hotDrawn = false;
+var hotOn = { p: true, r: true, s: true, i: true, c: true, a: true };
+var HOTCAT = [['p', 'Highest phosphorus'], ['r', 'Rising phosphorus'], ['s', 'Storm overflows'], ['i', 'Pollution incidents'], ['c', 'Flagged twice'], ['a', 'Confirmed algae']];
+/* DAERA publishes river site names with the spaces removed. Put back the ones we can be sure of. */
+function siteName(raw) {
+var s = String(raw || '').toUpperCase(), m = /(RIVER|STREAM|TRIB\)?|WATER|BURN)AT(?=[A-Z])/.exec(s), river, at;
+if (m) { river = s.slice(0, m.index + m[1].length); at = s.slice(m.index + m[1].length + 2); }
+else { m = /RAT(?=[A-Z])/.exec(s); if (!m) return tidyName(raw); river = s.slice(0, m.index) + ' RIVER'; at = s.slice(m.index + 3); }
+river = river.replace(/(RIVER|STREAM|TRIB)/g, ' $1 ').replace(/\(/g, ' (').replace(/\s+\)/g, ')').replace(/\(\s+/g, '(');
+at = at.replace(/RDBR$/, ' ROAD BRIDGE').replace(/([^E])BR$/, '$1 BRIDGE').replace(/(LANEWAY|BRIDGE|STREET|ROAD)/g, ' $1 ').replace(/ OFF(?=[A-Z])/, ' OFF ');
+var tidy = function (x) { return tidyName(x.replace(/\s+/g, ' ').trim()); };
+return tidy(river) + ' at ' + tidy(at).replace(/ Off /, ' off ');
+}
+function kmBetween(a, b) { var dy = (a.lat - b.lat) * 111.2, dx = (a.lon - b.lon) * 111.2 * Math.cos(a.lat * Math.PI / 180); return Math.sqrt(dx * dx + dy * dy); }
+function incWho(q) {
+var parts = [['farming', q.farm], ['sewage or households', q.sewage], ['industry', q.industry]].filter(function (x) { return x[1] > 0; }).sort(function (a, b) { return b[1] - a[1]; });
+return parts.length ? parts.map(function (x) { return x[1] + ' ' + x[0]; }).join(', ') : 'no source recorded';
+}
+/* Turn the feed into one list of pins. A site that is both high and rising gets one pin. */
+function hotItems() {
+var out = [], byCode = {};
+HOT.sites.forEach(function (x, k) { var it = { id: 'P' + (k + 1), cat: 'p', lat: x.lat, lon: x.lon, x: x, name: siteName(x.name), rising: false }; byCode[x.code] = it; out.push(it); });
+var rk = 0;
+HOT.risers.forEach(function (x) { if (byCode[x.code]) byCode[x.code].rising = true; else { rk++; out.push({ id: 'R' + rk, cat: 'r', lat: x.lat, lon: x.lon, x: x, name: siteName(x.name), rising: true }); } });
+HOT.overflows.forEach(function (x, k) { out.push({ id: 'S' + (k + 1), cat: 's', lat: x.lat, lon: x.lon, x: x, name: x.name }); });
+HOT.squares.forEach(function (x, k) { out.push({ id: 'I' + (k + 1), cat: 'i', lat: x.lat, lon: x.lon, x: x, name: 'Square in the ' + basinLabel(x.basin) + ' basin' }); });
+return out;
+}
+/* Places where two different kinds of flag fall within 2 km of each other. */
+function hotClusters(items) {
+var seen = {}, out = [];
+items.forEach(function (start) {
+if (seen[start.id]) return;
+var grp = [start], q = [start]; seen[start.id] = true;
+while (q.length) { var cur = q.pop(); items.forEach(function (o) { if (!seen[o.id] && kmBetween(cur, o) <= 2) { seen[o.id] = true; grp.push(o); q.push(o); } }); }
+var kinds = {}; grp.forEach(function (g) { kinds[g.cat === 'r' ? 'p' : g.cat] = 1; });
+if (Object.keys(kinds).length >= 2) out.push(grp);
+});
+return out.map(function (grp, k) {
+var lat = 0, lon = 0; grp.forEach(function (g) { lat += g.lat / grp.length; lon += g.lon / grp.length; });
+var c = { id: String.fromCharCode(65 + k), lat: lat, lon: lon, items: grp }, rad = 0;
+grp.forEach(function (g) { rad = Math.max(rad, kmBetween(c, g)); });
+c.radius = rad * 1000 + 700;
+var named = grp.filter(function (g) { return g.cat === 's'; })[0] || grp.filter(function (g) { return g.cat !== 'i'; })[0];
+c.name = named ? 'Around ' + named.name : 'In the ' + basinLabel(grp[0].x.basin) + ' basin';
+c.basin = grp[0].x.basin;
+return c;
+});
+}
+function hotPopup(it) {
+var x = it.x, b = basinLabel(x.basin) + ' basin';
+if (it.cat === 'p' || it.cat === 'r') return '<strong>' + it.id + ' · ' + esc(it.name) + '</strong><br>' + b + ', DAERA site ' + esc(x.code) + '<br>2020 to 2024 average: ' + x.mean.toFixed(3) + ' mg/l of dissolved phosphorus, from ' + x.n + ' tests' + (x.prev == null ? '' : '<br>2015 to 2019 average: ' + x.prev.toFixed(3) + ' mg/l' + (it.rising ? ', so it has risen' : ''));
+if (it.cat === 's') return '<strong>' + it.id + ' · ' + esc(x.name) + '</strong><br>' + b + (x.into && x.into !== 'Undefined' ? ', spills into ' + esc(x.into) : '') + '<br>Predicted to spill ' + nf(x.spills) + ' times and ' + nf(x.vol) + ' cubic metres a year' + (x.cls ? '<br>NI Water class: ' + esc(x.cls) : '');
+return '<strong>' + it.id + ' · 1 km square, ' + b + '</strong><br>' + x.t + ' pollution incidents recorded, 2011 to 2024<br>' + x.recent + ' of them since 2020' + (x.high ? ', ' + x.high + ' rated high severity' : '') + '<br>Recorded source: ' + incWho(x);
+}
+function hotIcon(it) { return L.divIcon({ html: '<span class="hp ' + it.cat + (it.rising && it.cat === 'p' ? ' up' : '') + '">' + it.id + '</span>', className: 'mk', iconSize: [32, 24], iconAnchor: [16, 12] }); }
+function buildHotMap() {
+if (!window.L) { $('hotMap').innerHTML = '<p class="mapfail">The map could not load. The list of places still works.</p>'; return; }
+HOTMAP = L.map('hotMap', { zoomSnap: 0.25, zoomDelta: 0.5, minZoom: 8, maxZoom: 16, scrollWheelZoom: false, dragging: !L.Browser.mobile });
+HOTMAP.attributionControl.setPrefix(false);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, zIndex: 1, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(HOTMAP);
+var items = hotItems(), pts = [];
+['p', 'r', 's', 'i', 'c', 'a'].forEach(function (k) { HOTGRP[k] = L.layerGroup(); });
+items.forEach(function (it) {
+if (it.cat === 'i') L.rectangle([[it.x.b[0], it.x.b[1]], [it.x.b[2], it.x.b[3]]], { color: '#bf3528', weight: 2, fillColor: '#bf3528', fillOpacity: 0.18, interactive: false }).addTo(HOTGRP.i);
+var m = L.marker([it.lat, it.lon], { icon: hotIcon(it), title: it.id + ' ' + it.name, alt: it.id + ' ' + it.name, zIndexOffset: it.cat === 'p' ? 400 : it.cat === 's' ? 300 : 200 }).bindPopup(hotPopup(it));
+m.addTo(HOTGRP[it.cat]); HOTPIN[it.id] = { it: it, m: m }; pts.push([it.lat, it.lon]);
+});
+HOTCL.forEach(function (c) {
+var ring = L.circle([c.lat, c.lon], { radius: c.radius, color: '#10262e', weight: 2, dashArray: '6 5', fill: false, interactive: false }).addTo(HOTGRP.c);
+L.marker([c.lat + c.radius / 111200, c.lon], { interactive: false, keyboard: false, icon: L.divIcon({ html: '<span class="hp c">' + c.id + '</span>', className: 'mk', iconSize: [32, 24], iconAnchor: [16, 12] }), zIndexOffset: 100 }).addTo(HOTGRP.c);
+c.ring = ring;
+});
+Object.keys(HOTGRP).forEach(function (k) { if (hotOn[k]) HOTGRP[k].addTo(HOTMAP); });
+HOTMAP.fitBounds(L.latLngBounds(pts).pad(0.06));
+hotExtras();
+}
+/* Basin outlines and confirmed algae arrive from other feeds, so add them whenever they are ready. */
+var hotBasinsDone = false, hotAlgaeDone = false;
+function hotExtras() {
+if (!HOTMAP) return;
+if (!hotBasinsDone && LAND && LAND.basins && SOURCES) {
+hotBasinsDone = true;
+var keep = {}; SOURCES.basins.forEach(function (b) { keep[b.name] = 1; });
+L.geoJSON(LAND.basins, { filter: function (f) { return keep[f.properties.NAME]; }, style: function () { return { color: '#10262e', weight: 1.5, opacity: 0.55, fill: false }; }, interactive: false }).addTo(HOTMAP);
+}
+if (!hotAlgaeDone && DATA && DATA.algae && DATA.algae.length) {
+hotAlgaeDone = true;
+DATA.algae.forEach(function (a) { L.circleMarker([a.lat, a.lon], { radius: 4.5, color: '#ffffff', weight: 1.5, fillColor: '#b0206a', fillOpacity: 0.9 }).bindTooltip(a.name + ', algae confirmed ' + fmtDate(a.date) + ' ' + a.date.slice(0, 4)).addTo(HOTGRP.a); });
+}
+}
+function focusHot(id) {
+var mapEl = $('hotMap');
+if (HOTMAP) {
+var cl = HOTCL.filter(function (c) { return c.id === id; })[0], pin = HOTPIN[id];
+if (cl) { if (!hotOn.c) toggleHot('c'); HOTMAP.closePopup(); HOTMAP.fitBounds(cl.ring.getBounds().pad(0.25)); }
+else if (pin) { if (!hotOn[pin.it.cat]) toggleHot(pin.it.cat); HOTMAP.setView([pin.it.lat, pin.it.lon], Math.max(HOTMAP.getZoom(), 13)); pin.m.openPopup(); }
+}
+var box = mapEl.getBoundingClientRect();
+if (box.top < 0 || box.bottom > window.innerHeight) mapEl.scrollIntoView({ block: 'center' });
+}
+function toggleHot(k) {
+hotOn[k] = !hotOn[k];
+if (HOTMAP && HOTGRP[k]) { if (hotOn[k]) HOTGRP[k].addTo(HOTMAP); else HOTMAP.removeLayer(HOTGRP[k]); }
+hotChips();
+}
+function hotChips() {
+$('hotChips').innerHTML = '<div class="lrow"><span class="llab">Show</span>' + HOTCAT.map(function (g) { return chip('hotcat', g[0], g[1], hotOn[g[0]]); }).join('') + '<button type="button" class="chip" id="hotAll" data-hot="all">Whole area</button></div>';
+}
+function hotRow(id, cat, up, title, sub, val) {
+return '<li><button type="button" class="hotitem" id="hot_' + id + '" data-hot="' + id + '"><span class="hp ' + cat + (up ? ' up' : '') + '">' + id + '</span><span class="hottxt"><strong>' + title + '</strong><span class="sub">' + sub + '</span></span><span class="val">' + val + '</span></button></li>';
+}
+function mostCommon(list) {
+var n = {}, best = null; list.forEach(function (x) { n[x.basin] = (n[x.basin] || 0) + 1; if (!best || n[x.basin] > n[best]) best = x.basin; });
+return { basin: best, n: n[best] };
+}
+function areasHtml(items) {
+var P = items.filter(function (i) { return i.cat === 'p'; }), RI = items.filter(function (i) { return i.rising; }).sort(function (a, b) { return (b.x.mean - b.x.prev) - (a.x.mean - a.x.prev); });
+var S = items.filter(function (i) { return i.cat === 's'; }), I = items.filter(function (i) { return i.cat === 'i'; });
+var h = '<div><h2>Where to look first</h2><p class="lede">The individual places behind the Analysis tab: the river test sites, storm overflows and one-kilometre squares that stand out most in the seven basins flowing into the lough.</p></div>' +
+'<p class="notice"><strong>A flag is a reason to look, not proof.</strong> A pin shows where a measurement or a record is high. It does not show who or what caused it.</p>';
+var f = [];
+if (P.length) { var mp = mostCommon(P.map(function (i) { return i.x; })); f.push('<strong>' + mp.n + ' of the ' + P.length + ' river sites with the most phosphorus</strong> are in the ' + basinLabel(mp.basin) + ' basin. The highest, ' + esc(P[0].name) + ', averages ' + P[0].x.mean.toFixed(3) + ' mg/l.'); }
+if (RI.length) { var mr = mostCommon(RI.map(function (i) { return i.x; })); f.push('<strong>' + mr.n + ' of the ' + RI.length + ' sites that have risen most</strong> since 2015 to 2019 are in the ' + basinLabel(mr.basin) + ' basin.'); }
+if (S.length) { var un = S.filter(function (i) { return i.x.cls === 'Unsatisfactory'; }).length; f.push('<strong>' + esc(S[0].name) + '</strong> is the storm overflow predicted to spill most, at ' + nf(S[0].x.vol) + ' cubic metres a year. NI Water classes ' + un + ' of the ' + S.length + ' biggest as unsatisfactory.'); }
+if (I.length) f.push('<strong>The square with most pollution incidents</strong> is in the ' + basinLabel(I[0].x.basin) + ' basin, with ' + I[0].x.t + ' since 2011. Recorded source: ' + incWho(I[0].x) + '.');
+if (HOTCL.length) f.push('<strong>' + HOTCL.length + ' ' + (HOTCL.length === 1 ? 'place is' : 'places are') + ' flagged by more than one dataset</strong>, ringed on the map. These are the strongest candidates for a closer look.');
+h += '<div><h3>What stands out</h3><ul class="finds">' + f.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div>';
+h += '<p class="small">Tap any row to find it on the map.</p>';
+if (HOTCL.length) h += '<div><h3>Flagged by more than one dataset</h3><p class="small">Two or more different kinds of flag within 2 km of each other.</p><ol class="hotlist">' + HOTCL.map(function (c) {
+return hotRow(c.id, 'c', false, esc(c.name), basinLabel(c.basin) + ' basin · ' + c.items.map(function (g) { return g.id; }).join(', '), c.items.length + ' flags');
+}).join('') + '</ol></div>';
+h += '<div><h3>Most phosphorus in the river</h3><p class="small">Average dissolved phosphorus, 2020 to 2024, out of ' + HOT.counts.sites + ' sites tested in these basins. An orange ring means it is also rising.</p><ol class="hotlist">' + P.map(function (i) {
+return hotRow(i.id, 'p', i.rising, esc(i.name), basinLabel(i.x.basin) + ' basin · ' + i.x.n + ' tests', i.x.mean.toFixed(3) + ' mg/l');
+}).join('') + '</ol></div>';
+h += '<div><h3>Rising fastest</h3><p class="small">Biggest increase in the average between 2015 to 2019 and 2020 to 2024.</p><ol class="hotlist">' + RI.map(function (i) {
+return hotRow(i.id, i.cat, i.cat === 'p', esc(i.name), basinLabel(i.x.basin) + ' basin · ' + i.x.prev.toFixed(3) + ' then, ' + i.x.mean.toFixed(3) + ' now', '+' + (i.x.mean - i.x.prev).toFixed(3) + ' mg/l');
+}).join('') + '</ol></div>';
+h += '<div><h3>Storm overflows predicted to spill most</h3><p class="small">NI Water model predictions from May 2024, out of ' + HOT.counts.overflows + ' overflows in these basins. None of these are measured.</p><ol class="hotlist">' + S.map(function (i) {
+return hotRow(i.id, 's', false, esc(i.x.name), basinLabel(i.x.basin) + ' basin · ' + nf(i.x.spills) + ' spills a year' + (i.x.cls ? ' · ' + esc(i.x.cls.toLowerCase()) : ''), nf(i.x.vol) + ' m³');
+}).join('') + '</ol></div>';
+h += '<div><h3>Most pollution incidents</h3><p class="small">One-kilometre squares with the most incidents recorded by DAERA, 2011 to 2024.</p><ol class="hotlist">' + I.map(function (i) {
+return hotRow(i.id, 'i', false, 'Square in the ' + basinLabel(i.x.basin) + ' basin', incWho(i.x) + ' · ' + i.x.recent + ' since 2020', i.x.t + ' incidents');
+}).join('') + '</ol></div>';
+h += '<div><h3>How to read this</h3><ul class="notes">' +
+'<li>A river test measures everything upstream of that point, so the cause can be some distance away.</li>' +
+'<li>Storm overflow figures are computer predictions by NI Water. No overflow in this dataset is monitored.</li>' +
+'<li>Incident counts depend on people reporting. A busy town will record more than a quiet valley.</li>' +
+'<li>The river test data is published raw. One bad sample can lift an average, so check the readings before naming a site.</li>' +
+'<li>Site names are tidied from DAERA\'s records, which have no spaces. Use the site code in each pin to look a site up.</li>' +
+'<li>Only the top ten of each kind are pinned (six for rising sites). Other places may be nearly as high.</li></ul></div>';
+return h;
+}
+function renderAreas() {
+var el = $('areasBody'); if (!el) return;
+if (!HOT) { el.innerHTML = '<p class="small">' + (HOTFAIL ? 'The list of flagged places is not available right now. Please try again in a few minutes.' : 'Finding the places the DAERA data flags. This can take a few seconds the first time.') + '</p>'; return; }
+if (!hotDrawn) {
+hotDrawn = true;
+var items = hotItems(); HOTCL = hotClusters(items);
+el.innerHTML = areasHtml(items);
+hotChips();
+$('hotCap').innerHTML = '<span class="key"><span class="hp p">P</span>most phosphorus</span><span class="key"><span class="hp r">R</span>rising</span><span class="key"><span class="hp s">S</span>storm overflow</span><span class="key"><span class="hp i">I</span>incident square</span><span class="key"><span class="sw dot" style="background:#b0206a"></span>confirmed algae</span><span class="key">dashed ring: flagged twice</span><span class="key">grey line: basin edge</span>';
+buildHotMap();
+} else if (HOTMAP) { HOTMAP.invalidateSize(); hotExtras(); }
+}
+function loadHot() {
+if (!window.fetch) { HOTFAIL = true; return; }
+fetch('/api/hotspots').then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok || !j.sites) { HOTFAIL = true; } else HOT = j;
+showView();
+}).catch(function () { HOTFAIL = true; showView(); });
+}
 function showView() {
-var a = location.hash === '#analysis';
-$('viewMap').hidden = a; $('viewAnalysis').hidden = !a;
-if (a) { $('tabAnalysis').setAttribute('aria-current', 'page'); $('tabMap').removeAttribute('aria-current'); renderAnalysis(); }
-else { $('tabMap').setAttribute('aria-current', 'page'); $('tabAnalysis').removeAttribute('aria-current'); if (MAP) MAP.invalidateSize(); }
+var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : 'Map';
+['Map', 'Analysis', 'Areas'].forEach(function (n) {
+$('view' + n).hidden = n !== v;
+if (n === v) $('tab' + n).setAttribute('aria-current', 'page'); else $('tab' + n).removeAttribute('aria-current');
+});
+if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (MAP) MAP.invalidateSize();
 }
 /* ---------- layer controls and map caption ---------- */
 function chip(attr, val, label, pressed, disabled) {
@@ -737,14 +912,14 @@ function loadData() {
 if (!window.fetch) return;
 fetch('/api/lough').then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) return;
-DATA = j; buildData(); render();
+DATA = j; buildData(); render(); hotExtras();
 }).catch(function () {});
 }
 function loadLand() {
 if (!window.fetch) return;
 fetch('/api/land').then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) return;
-LAND = j; buildLand(); buildSources(); render();
+LAND = j; buildLand(); buildSources(); render(); hotExtras();
 }).catch(function () {});
 }
 function loadWater() {
@@ -761,7 +936,7 @@ if (!j || !j.ok || !j.basins || !j.basins.length) return;
 /* The lough shore basin's outline includes the lough itself, so take the 383 square km of water off its area. */
 j.basins.forEach(function (x) { if (x.name === 'Lough Neagh' && x.km2 > 600) x.km2 -= 383; });
 SOURCES = j; if (!j.basins.some(function (x) { return x.name === state.basin; })) state.basin = j.basins[0].name;
-buildSources(); render(); showView();
+buildSources(); render(); showView(); hotExtras();
 }).catch(function () {});
 }
 function loadLive() {
@@ -781,6 +956,8 @@ preset();
 document.addEventListener('click', function (e) {
 var t = e.target.closest ? e.target.closest('button') : null;
 if (!t) return;
+if (t.dataset.hotcat) { toggleHot(t.dataset.hotcat); if ($(t.id)) $(t.id).focus({ preventScroll: true }); return; }
+if (t.dataset.hot) { if (t.dataset.hot === 'all') { if (HOTMAP) { HOTMAP.closePopup(); var pp = Object.keys(HOTPIN).map(function (k) { return [HOTPIN[k].it.lat, HOTPIN[k].it.lon]; }); HOTMAP.fitBounds(L.latLngBounds(pp).pad(0.06)); } } else focusHot(t.dataset.hot); return; }
 if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; preset(); }
 else if (t.dataset.geo) state.shade = t.dataset.geo === 'off' ? 'none' : t.dataset.geo;
 else if (t.dataset.base) state.base = t.dataset.base;
@@ -814,6 +991,7 @@ loadData();
 loadLand();
 loadWater();
 loadSources();
+loadHot();
 }
 start();
 })();

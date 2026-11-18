@@ -22,6 +22,7 @@
 <nav class="tabs" aria-label="Sections">
 <a class="tab" id="tabMap" href="#explore">Map</a>
 <a class="tab" id="tabAnalysis" href="#analysis">Analysis</a>
+<a class="tab" id="tabAreas" href="#areas">Key areas</a>
 </nav>
 <div id="viewMap">
 <div class="stage">
@@ -54,6 +55,16 @@
 <section id="viewAnalysis" class="analysis" hidden>
 <div id="analysisBody"></div>
 </section>
+<section id="viewAreas" class="areas" hidden>
+<div class="stage">
+<figure class="mapbox">
+<div id="hotMap" role="group" aria-label="Map of the places the data flags"></div>
+<div class="layers" id="hotChips"></div>
+<figcaption class="mapcap" id="hotCap"></figcaption>
+</figure>
+<div class="side"><div id="areasBody"></div></div>
+</div>
+</section>
 <footer>
 <h3>Turning this into a real forecast</h3>
 <ul>
@@ -71,6 +82,7 @@
 <li>Past 30 days of weather: Open-Meteo weather model archive (open-meteo.com), CC BY 4.0.</li>
 <li>Buoy readings, confirmed blue-green algae locations and treatment works: DAERA open data, Open Government Licence v3.0. Buoy readings are provisional and not validated.</li>
 <li>River phosphorus tests 1990 to 2024, water body status 2018 and NI Water storm overflows (May 2024): DAERA open data, Open Government Licence v3.0. The river test data is published raw and may contain errors.</li>
+<li>Key areas: the same DAERA river test, storm overflow and pollution incident data, ranked place by place. Storm overflow figures are NI Water model predictions, not measurements.</li>
 <li>Likely sources: the DAERA datasets above matched to DAERA's Local Management Area outlines. Livestock is shared between basins by land area, which is an estimate.</li>
 <li>Land cover: Corine Land Cover 2018, Copernicus Land Monitoring Service, European Environment Agency.</li>
 <li>Slurry spreading dates and rules: DAERA Nutrients Action Programme guidance.</li>
