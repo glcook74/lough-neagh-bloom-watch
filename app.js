@@ -855,9 +855,9 @@ var next = function () {
 var job = jobs.shift(); if (!job) return;
 fetch('/api/satstats?year=' + job[0] + '&half=' + job[1]).then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) SAT.failed++; else { if (j.zones) SAT.zones = j.zones; j.days.forEach(function (d) { SAT.days[d.date] = d.z; }); }
-}).catch(function () { SAT.failed++; }).then(function () { SAT.done++; if (location.hash === '#satellite') renderSat(); if (location.hash === '#investigate' && (SAT.done === SAT.total || !INV.date)) renderInv(); next(); });
+}).catch(function () { SAT.failed++; }).then(function () { SAT.done++; if (location.hash === '#satellite') renderSat(); if (location.hash === '#investigate' && (SAT.done === SAT.total || !INV.date)) renderInv(); if (location.hash === '#forecast') renderFc(); next(); });
 };
-next(); next(); next();
+next(); next();
 }
 /* Keep an area for a day only if at least 30% of its water was clear, and a whole-lough figure only if 40% was. */
 function satModel() {
@@ -1117,10 +1117,54 @@ else h += invHtml(INV.date); }
 el.innerHTML = h;
 }
 /* ---------- forecast: hindcast check and outlook for next season ---------- */
-var FC = null, FCSTATE = '';
+var FC = null, FCWX = null, FCSTATE = '';
 function loadFc() {
 if (FCSTATE || !window.fetch) return; FCSTATE = 'loading';
-fetch('/api/outlook?v=2').then(function (res) { return res.json(); }).then(function (j) { if (j && j.ok) { FC = j; FCSTATE = 'ok'; } else FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); }).catch(function () { FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); });
+fetch('/api/outlook?v=3').then(function (res) { return res.json(); }).then(function (j) { if (j && j.ok) { FCWX = j; FCSTATE = 'ok'; } else FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); }).catch(function () { FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); });
+}
+/* The score. Algae build up on warm, bright, light-wind days and are knocked back by wind; calm brings them to the surface. */
+function fcRun(days, p) {
+var tw = 6, b = 0.02, out = [], prevW = 10, cl = function (v, lo, hi) { return Math.max(lo, Math.min(hi, v)); };
+days.forEach(function (d) {
+tw += 0.15 * ((d.t + p.off) - tw);
+var fT = cl((tw - p.t0) / (22 - p.t0), 0, 1.2), fL = cl(d.s / 12, 0.2, 1), fM = d.w <= 7 ? 1 : Math.max(0.2, 1 - (d.w - 7) / 12);
+b = cl(b + b * p.r * fT * fL * fM * (1 - b) - b * (p.loss + (d.w > 15 ? 0.04 : 0)), 0.02, 1);
+var w2 = (d.w + prevW) / 2, surf = w2 <= 5 ? 1 : Math.max(0.25, 1 - (w2 - 5) / 10); prevW = d.w;
+out.push({ date: d.date, tw: tw, b: b, score: b * surf });
+});
+return out;
+}
+function fcRanks(a) { var idx = a.map(function (v, i) { return [v, i]; }).sort(function (x, y) { return x[0] - y[0]; }), r = [], i = 0; while (i < idx.length) { var k = i; while (k + 1 < idx.length && idx[k + 1][0] === idx[i][0]) k++; for (var q = i; q <= k; q++) r[idx[q][1]] = (i + k) / 2 + 1; i = k + 1; } return r; }
+function fcRho(a, b) { if (a.length < 5) return null; var x = fcRanks(a), y = fcRanks(b), mx = avg(x), my = avg(y), s = 0, sx = 0, sy = 0; for (var i = 0; i < x.length; i++) { s += (x[i] - mx) * (y[i] - my); sx += (x[i] - mx) * (x[i] - mx); sy += (y[i] - my) * (y[i] - my); } return sx && sy ? s / Math.sqrt(sx * sy) : null; }
+/* Tune the score on every year but the latest, test it on the latest, and summarise each season. */
+function fcBuild() {
+var years = Object.keys(FCWX.years).map(Number).sort(), wx = {}, inSea = function (date) { var m = +date.slice(5, 7); return m >= 6 && m <= 10; };
+years.forEach(function (y) { wx[y] = FCWX.years[y].map(function (d) { return { date: y + '-' + d[0], t: d[1], tmax: d[2], w: d[3], r: d[4], s: d[5] }; }); });
+var passes = satModel().filter(function (r) { return r.lough; }).map(function (r) { return { date: r.date, m: r.lough.m, h: r.lough.h }; });
+var of = function (list) { return passes.filter(function (s) { return list.indexOf(+s.date.slice(0, 4)) >= 0; }); };
+var pairs = function (by, ps, sea) { var a = [], b = []; ps.forEach(function (s) { if (sea && !inSea(s.date)) return; if (by[s.date] != null) { a.push(by[s.date]); b.push(s.m); } }); return [a, b]; };
+var evaluate = function (by, ps, thr) { var all = pairs(by, ps, false), sea = pairs(by, ps, true), hits = 0, high = 0, fa = 0, low = 0; ps.forEach(function (s) { if (!inSea(s.date) || by[s.date] == null) return; var al = by[s.date] >= thr; if (s.h >= 0.5) { high++; if (al) hits++; } else { low++; if (al) fa++; } }); return { passes: all[0].length, seasonPasses: sea[0].length, rho: fcRho(all[0], all[1]), rhoSeason: fcRho(sea[0], sea[1]), highDays: high, caught: hits, lowDays: low, falseAlarms: fa }; };
+var testYear = years[years.length - 1], trainYears = years.slice(0, -1), grid = [];
+[0, 2].forEach(function (off) { [0.15, 0.25, 0.35].forEach(function (r) { [0.02, 0.04].forEach(function (loss) { [12, 14].forEach(function (t0) { grid.push({ off: off, r: r, loss: loss, t0: t0 }); }); }); }); });
+var scoreFor = function (p, list) { var by = {}; list.forEach(function (y) { fcRun(wx[y], p).forEach(function (d) { by[d.date] = d.score; }); }); return by; };
+var best = null; grid.forEach(function (p) { var pr = pairs(scoreFor(p, trainYears), of(trainYears), true), rho = fcRho(pr[0], pr[1]); if (rho != null && (!best || rho > best.rho)) best = { p: p, rho: rho }; });
+if (!best) return null;
+var P = best.p, by = scoreFor(P, years), tr = of(trainYears).filter(function (s) { return inSea(s.date) && by[s.date] != null; }), cands = tr.map(function (s) { return by[s.date]; }).sort(function (a, b) { return a - b; }), thr = cands[Math.floor(cands.length / 2)] || 0.1, bestJ = -9;
+cands.forEach(function (c) { var hi = 0, hit = 0, lo = 0, fa = 0; tr.forEach(function (s) { if (s.h >= 0.5) { hi++; if (by[s.date] >= c) hit++; } else { lo++; if (by[s.date] >= c) fa++; } }); if (!hi || !lo) return; var J = hit / hi - fa / lo; if (J > bestJ) { bestJ = J; thr = c; } });
+var monthMean = {}; for (var mo = 1; mo <= 12; mo++) { var v = of(trainYears).filter(function (s) { return +s.date.slice(5, 7) === mo; }).map(function (s) { return s.m; }); monthMean[mo] = v.length ? avg(v) : 0; }
+var clim = {}; passes.forEach(function (s) { clim[s.date] = monthMean[+s.date.slice(5, 7)]; });
+var skill = { train: evaluate(by, of(trainYears), thr), test: evaluate(by, of([testYear]), thr), calendarOnly: { test: evaluate(clim, of([testYear]), 1e9).rhoSeason } };
+skill.train.years = trainYears; skill.test.years = [testYear];
+var nowState = null, perYear = years.map(function (y) {
+var days = wx[y], series = fcRun(days, P), summer = days.filter(function (d) { return inSea(d.date); }), ps = of([y]), sea = ps.filter(function (s) { return inSea(s.date); }), above = ps.filter(function (s) { return s.m >= 0.1; }), pk = ps.slice().sort(function (a, b) { return b.m - a.m; })[0];
+if (y === testYear && series.length) { var ls = series[series.length - 1]; nowState = { date: ls.date, score: ls.score, water: ls.tw }; }
+var weekly = []; for (var i = 0; i + 6 < series.length; i += 7) weekly.push([series[i].date.slice(5), avg(series.slice(i, i + 7).map(function (d) { return d.score; }))]);
+return { year: y, complete: days.length && days[days.length - 1].date >= y + '-10-31',
+summer: summer.length ? { meanTemp: avg(summer.map(function (d) { return d.t; })), warmCalmDays: summer.filter(function (d) { return d.tmax >= 19 && d.w < 9 && d.s >= 9; }).length, calmDays: summer.filter(function (d) { return d.w < 6; }).length, rain: Math.round(summer.reduce(function (s, d) { return s + d.r; }, 0)) } : null,
+satellite: { seasonUsable: sea.length, highDays: sea.filter(function (s) { return s.h >= 0.5; }).length, first: above.length ? above[0].date : null, last: above.length ? above[above.length - 1].date : null, peak: pk ? { date: pk.date, m: pk.m } : null, seasonMean: sea.length ? avg(sea.map(function (s) { return s.m; })) : null },
+weekly: weekly, passes: ps.map(function (s) { return [s.date.slice(5), s.m, s.h]; }) };
+});
+return { alarmLevel: thr, params: P, now: nowState, skill: skill, years: perYear };
 }
 function dm(date) { return date ? shortDate(date.length === 5 ? '2000-' + date : date) : 'none'; }
 function strength(r) { return r == null ? 'could not be worked out' : r >= 0.7 ? 'strong' : r >= 0.5 ? 'moderate' : r >= 0.3 ? 'weak' : r > 0.1 ? 'very weak' : 'no better than chance'; }
@@ -1139,6 +1183,7 @@ return s + '</svg>';
 function fcHtml() {
 FC.top = Math.max(FC.alarmLevel * 1.5, 1.15 * Math.max.apply(null, FC.years.map(function (y) { return Math.max.apply(null, y.weekly.map(function (w) { return w[1]; }).concat([0])); }))) || 0.5;
 var Y = FC.years, sk = FC.skill, next = FC.years[FC.years.length - 1].year + 1, done = Y.filter(function (y) { return y.summer && y.satellite.seasonUsable; });
+if (!done.length) return '<p class="small">Not enough satellite data loaded to work out an outlook.</p>';
 var h = '<h2>Outlook for ' + next + '</h2><p class="lede">What four seasons of satellite and weather records can and cannot say about next year, with a test of how far to trust it.</p>' +
 '<p class="notice"><strong>A range, not a prediction.</strong> How bad a season gets depends mostly on the summer\'s weather, which nobody can forecast this far ahead. This page shows the likely window and what different summers have produced before.</p>';
 /* outlook */
@@ -1166,7 +1211,7 @@ h += '<h3>The score against the satellite, year by year</h3><p class="small">Sha
 /* tracker */
 var n = FC.now;
 h += '<h3>Early warning for ' + next + '</h3><p>The same score keeps running on each new day of weather, so this section becomes a live tracker once spring arrives.</p><dl class="invfinds">' +
-(n ? '<div><dt>Where it stands</dt><dd>On ' + longDate(n.date) + ' the score was <strong>' + n.score.toFixed(2) + '</strong> against an alarm level of ' + FC.alarmLevel.toFixed(2) + ', with the water estimated at ' + n.water.toFixed(1) + '°C. ' + (n.score >= FC.alarmLevel ? 'That is above the alarm level.' : n.water < 12 ? 'The water is too cold for blooms, as expected at this time of year.' : 'That is below the alarm level.') + '</dd></div>' : '') +
+(n ? '<div><dt>Where it stands</dt><dd>On ' + longDate(n.date) + ' the score was <strong>' + n.score.toFixed(2) + '</strong> against an alarm level of ' + FC.alarmLevel.toFixed(2) + ', with the water estimated at ' + n.water.toFixed(1) + '°C. ' + (n.water < 12 ? 'The water is too cold for blooms, as expected at this time of year.' : n.score >= FC.alarmLevel ? 'That is above the alarm level.' : 'That is below the alarm level.') + '</dd></div>' : '') +
 '<div><dt>Watch for, in order</dt><dd><ol class="fcsteps"><li>Water passing <strong>18°C</strong>. Check the buoys on the Map tab.</li><li>A run of <strong>three or more</strong> warm, sunny days with wind under 9 mph.</li><li>The score crossing its alarm level.</li><li>Heavy rain over the river basins, followed by <strong>two calm days</strong>. That is the pattern before 24 August 2026.</li><li>The five-day outlook on the Map tab turning amber or red for a shore.</li></ol></dd></div></dl>';
 h += '<h3>What this cannot do</h3><ul class="notes">' +
 '<li>Four seasons is a very short record. One unusual year would change these ranges.</li>' +
@@ -1178,8 +1223,11 @@ h += '<h3>What this cannot do</h3><ul class="notes">' +
 return h;
 }
 function renderFc() {
-var el = $('fcBody'); if (!el) return; loadFc();
-el.innerHTML = FC ? fcHtml() : '<p class="small" role="status">' + (FCSTATE === 'fail' ? 'The outlook could not be worked out right now. Please try again in a few minutes.' : 'Running the score over every year since 2023 and checking it against the satellite. This can take up to a minute the first time.') + '</p>';
+var el = $('fcBody'); if (!el) return; loadFc(); loadSat();
+var ready = FCWX && SAT.zones && SAT.total && SAT.done === SAT.total;
+if (ready) { FC = fcBuild(); }
+if (ready && FC && FC.years.some(function (y) { return y.satellite.seasonUsable; })) el.innerHTML = (SAT.failed ? '<p class="notice"><strong>Some satellite data is missing.</strong> ' + SAT.failed + ' of the ' + SAT.total + ' half-years could not be loaded, so the figures below are incomplete. Refresh the page in a few minutes.</p>' : '') + fcHtml();
+else el.innerHTML = '<p class="small" role="status">' + (FCSTATE === 'fail' || (ready && !FC) || (SAT.total && SAT.done === SAT.total && !SAT.zones) ? 'The outlook could not be worked out right now, because the weather or satellite records did not load. Please try again in a few minutes.' : 'Running the score over every year since 2023 and checking it against the satellite. This can take up to a minute the first time. Loaded ' + SAT.done + ' of ' + (SAT.total || 8) + ' satellite half-years.') + '</p>';
 }
 function showView() {
 var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : location.hash === '#investigate' ? 'Investigate' : location.hash === '#forecast' ? 'Forecast' : 'Map';

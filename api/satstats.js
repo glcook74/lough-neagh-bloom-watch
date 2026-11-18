@@ -35,12 +35,12 @@ async function zoneStats(tok, z, from, to) {
     aggregation: { timeRange: { from: from + 'T00:00:00Z', to: to + 'T23:59:59Z' }, aggregationInterval: { of: 'P1D' }, evalscript: SCRIPT, resx: 200, resy: 200 },
     calculations: { default: {} }
   };
-  for (var attempt = 0; attempt < 2; attempt++) {
+  for (var attempt = 0; attempt < 3; attempt++) {
     var r = await fetch(STAT, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(body) });
     if (r.ok) return (await r.json()).data || [];
     var t = await r.text();
-    if (r.status !== 429 || attempt) { console.warn('Statistics refused:', z.id, r.status, t.slice(0, 300)); throw new Error('stats_' + r.status); }
-    await new Promise(function (ok) { setTimeout(ok, 2500); });
+    if (r.status !== 429 || attempt === 2) { console.warn('Statistics refused:', z.id, r.status, t.slice(0, 300)); throw new Error('stats_' + r.status); }
+    await new Promise(function (ok) { setTimeout(ok, 3000 * (attempt + 1)); });
   }
 }
 module.exports = async function (req, res) {
@@ -52,7 +52,9 @@ module.exports = async function (req, res) {
     if (from > today) { res.setHeader('Cache-Control', 'public, s-maxage=3600'); res.status(200).json({ ok: true, year: +year, half: half, zones: ZONES, days: [] }); return; }
     var open = to >= today; if (open) to = today;
     var tok = await token();
-    var per = await Promise.all(ZONES.map(function (z) { return zoneStats(tok, z, from, to); }));
+    /* three areas at a time, so the satellite service's rate limit is not hit */
+    var per = [];
+    for (var g = 0; g < ZONES.length; g += 3) per = per.concat(await Promise.all(ZONES.slice(g, g + 3).map(function (z) { return zoneStats(tok, z, from, to); })));
     var byDay = {};
     per.forEach(function (rows, k) {
       rows.forEach(function (d) {
@@ -64,7 +66,7 @@ module.exports = async function (req, res) {
       });
     });
     var days = Object.keys(byDay).sort().map(function (d) { return { date: d, z: byDay[d] }; });
-    res.setHeader('Cache-Control', 'public, s-maxage=' + (open ? 43200 : 2592000) + ', stale-while-revalidate=2592000');
+    res.setHeader('Cache-Control', 'public, max-age=' + (open ? 21600 : 2592000) + ', s-maxage=' + (open ? 86400 : 2592000) + ', stale-while-revalidate=2592000');
     res.status(200).json({ ok: true, year: +year, half: half, zones: ZONES, days: days });
   } catch (e) {
     console.warn('Satellite statistics failed:', String(e && e.message));
