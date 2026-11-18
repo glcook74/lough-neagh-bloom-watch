@@ -28,6 +28,8 @@ The map uses Leaflet with OpenStreetMap as the base map and the Geological Surve
 
 `api/land.js` adds river basin outlines, the 2019 farm census by district electoral area and totals from DAERA's agricultural risk map. `api/fields.js` returns the individual scored fields for a small map area when the reader zooms in.
 
+`api/water.js` adds measured water quality: DAERA river phosphorus tests (2020 to 2024 averages per site), NI Water's predicted storm overflows and DAERA's 2018 water body status.
+
 ## Live forecast
 
 The Live forecast option uses the Met Office Weather DataHub (Global Spot, three-hourly). The API key is stored in Vercel as the environment variable `MET_OFFICE_API_KEY` and is never sent to the browser. Responses are cached for an hour to stay inside the free daily allowance.

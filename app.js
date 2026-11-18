@@ -81,14 +81,15 @@ var state = { scn: 'B', step: 0, day: 0, base: 'map', satDate: YESTERDAY, shade:
 function preset() {
 var s = state.step, live = state.scn === 'L' && !!LIVE;
 state.shade = s === 1 ? 'sup' : 'none';
-state.on = { rivers: s === 2, works: s === 2, stake: s === 3, zones: s >= 4, buoys: s === 4 && live, algae: s === 4 && live, fields: false, incidents: false };
+state.on = { rivers: s === 2, works: s === 2, stake: s === 3, zones: s >= 4, buoys: s === 4 && live, algae: s === 4 && live, fields: false, incidents: false, srp: false, overflows: false };
 }
-function landMode() { return state.shade === 'basins' ? 'basins' : state.shade === 'farms' ? 'farms' : state.shade === 'cover' ? 'cover' : state.on.incidents ? 'incidents' : state.on.fields ? 'fields' : 'rivers'; }
+function landMode() { return state.shade === 'basins' ? 'basins' : state.shade === 'farms' ? 'farms' : state.shade === 'cover' ? 'cover' : state.shade === 'status' ? 'status' : state.on.incidents ? 'incidents' : state.on.srp ? 'srp' : state.on.overflows ? 'sewage' : state.on.fields ? 'fields' : 'rivers'; }
 function setLand(m) {
-state.shade = m === 'basins' || m === 'farms' || m === 'cover' ? m : 'none';
-state.on.fields = m === 'fields'; state.on.incidents = m === 'incidents'; state.on.rivers = m === 'rivers'; state.on.works = m === 'rivers';
+state.shade = m === 'basins' || m === 'farms' || m === 'cover' || m === 'status' ? m : 'none';
+state.on.fields = m === 'fields'; state.on.incidents = m === 'incidents'; state.on.srp = m === 'srp'; state.on.overflows = m === 'sewage';
+state.on.rivers = m === 'rivers'; state.on.works = m === 'rivers' || m === 'sewage';
 }
-var DATA = null, LAND = null;
+var DATA = null, LAND = null, WATER = null;
 var cache = {};
 var LIVE = null;
 function run() {
@@ -151,6 +152,24 @@ return L.circleMarker([a.lat, a.lon], { radius: 5, color: '#ffffff', weight: 1.5
 var bu = (DATA.buoys || []).filter(function (b) { return b.lat != null; });
 if (bu.length) LAYERS.buoys = L.layerGroup(bu.map(function (b) {
 return L.marker([b.lat, b.lon], { title: b.name + ' buoy', alt: b.name + ' buoy', zIndexOffset: 300, icon: mk('<span class="bm">B</span>', 18) });
+}));
+}
+function buildWater() {
+if (!MAP || !WATER) return;
+if (WATER.status) LAYERS.status = L.geoJSON(WATER.status, {
+style: function (f) { return { color: '#ffffff', weight: 1, fillColor: wfd(f.properties.F2018_statu)[1], fillOpacity: 0.6 }; },
+onEachFeature: function (f, l) { l.bindPopup('<strong>' + esc(f.properties.namespace || 'Water body') + '</strong><br>' + wfd(f.properties.F2018_statu)[0] + ' status, 2018' + (/EP/.test(f.properties.F2018_statu || '') ? '<br>Heavily modified water, graded on ecological potential' : '')); }
+});
+if (WATER.failing && WATER.failing.features && WATER.failing.features.length) LAYERS.failing = L.geoJSON(WATER.failing, {
+style: function () { return { color: '#10262e', weight: 2.5, fill: false, dashArray: '5 4' }; }, interactive: false
+});
+if (WATER.srp && WATER.srp.length) { var br = srpBreaks(); LAYERS.srp = L.layerGroup(WATER.srp.map(function (x) {
+var ch = x.prev == null ? '' : '<br>2015 to 2019 average: ' + x.prev.toFixed(3) + ' mg/l';
+return L.circleMarker([x.lat, x.lon], { radius: 6, color: '#ffffff', weight: 1.5, fillColor: srpColour(x.mean, br), fillOpacity: 0.95 }).bindPopup('<strong>' + esc(tidyName(x.name)) + '</strong><br>' + esc(x.basin || '') + ' basin, site ' + esc(x.code) + '<br>2020 to 2024 average: ' + x.mean.toFixed(3) + ' mg/l of dissolved phosphorus<br>' + x.n + ' readings' + ch);
+})); }
+if (WATER.overflows && WATER.overflows.length) LAYERS.overflows = L.layerGroup(WATER.overflows.map(function (x) {
+var bad = /unsat/i.test(x.cls), c = bad ? '#bf3528' : '#4f6b7a';
+return L.circleMarker([x.lat, x.lon], { radius: Math.min(11, 3 + Math.sqrt(x.spills) / 1.6), color: '#ffffff', weight: 1, fillColor: c, fillOpacity: 0.85 }).bindPopup('<strong>' + esc(x.name) + '</strong><br>Predicted to spill ' + nf(x.spills) + ' times a year<br>Predicted volume: ' + nf(x.vol) + ' m³ a year' + (x.cls ? '<br>Classed: ' + esc(x.cls) : '') + (x.into && !/undefined/i.test(x.into) ? '<br>Into: ' + esc(x.into) : '') + (x.mon ? '<br>Monitored: ' + esc(x.mon) : ''));
 }));
 }
 var fieldsLayer = null, fieldsKey = '', wasFields = false;
@@ -250,12 +269,59 @@ var H = top + rows.length * (rowH + gap);
 h += '<text class="ct" x="8" y="' + (H - 6) + '">30 days ago</text><text class="ct" x="332" y="' + (H - 6) + '" text-anchor="end">' + endLabel + '</text>';
 return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Water temperature, wind, rain and bloom index over the last 30 days">' + h + '</svg>';
 }
+var VIOLETS = ['#ece3f3', '#cdb5e0', '#a983c9', '#8153ad', '#5a2c86'];
+var WFD = { HIGH: ['High', '#00c5ff'], GOOD: ['Good', '#00a884'], MODERATE: ['Moderate', '#e6e600'], POOR: ['Poor', '#e69800'], BAD: ['Bad', '#e60000'], GEP: ['Good', '#00a884'], MEP: ['Moderate', '#e6e600'], 'MEP (AWB)': ['Moderate', '#e6e600'], PEP: ['Poor', '#e69800'], BEP: ['Bad', '#e60000'] };
+function wfd(v) { return WFD[String(v || '').trim().toUpperCase()] || ['No data', '#808080']; }
+function srpBreaks() { var v = WATER.srp.map(function (x) { return x.mean; }).sort(function (a, b) { return a - b; }); return [0.2, 0.4, 0.6, 0.8].map(function (q) { return v[Math.min(v.length - 1, Math.floor(q * v.length))]; }); }
+function srpColour(m, br) { var i = 0; while (i < br.length && m > br[i]) i++; return VIOLETS[i]; }
+function tidyName(s) { return String(s || '').toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }); }
+function waterPanel(m) {
+var h = '';
+if (!WATER) return '<p class="small">Loading the water quality data from DAERA. If this message stays, the service is not answering just now.</p>';
+if (m === 'srp') {
+var S = WATER.srp;
+if (!S || !S.length) return '<p class="small">The river test results could not be loaded just now.</p>';
+var byB = {}, up = 0, down = 0, both = 0;
+S.forEach(function (x) { var b = byB[x.basin || 'Other'] = byB[x.basin || 'Other'] || { s: 0, n: 0 }; b.s += x.mean; b.n++; if (x.prev != null) { both++; if (x.mean > x.prev) up++; else if (x.mean < x.prev) down++; } });
+var rows = Object.keys(byB).map(function (k) { return [k, byB[k].s / byB[k].n, byB[k].n]; }).sort(function (a, b) { return b[1] - a[1]; });
+h += '<p>DAERA tests river water for dissolved phosphorus, the form algae can use straight away. Each dot is a test site, coloured by its average for 2020 to 2024. These are measurements, not model estimates.</p><div class="bars">';
+rows.forEach(function (r) { h += '<div class="bar"><span>' + esc(r[0]) + '</span><span class="track"><span class="fill" style="display:block;width:' + (r[1] / rows[0][1] * 100).toFixed(0) + '%"></span></span><span class="val">' + r[1].toFixed(3) + '</span></div>'; });
+h += '</div><p class="small">Average milligrams of dissolved phosphorus per litre, 2020 to 2024, across the test sites in each basin (' + S.length + ' sites in the map area).</p>' +
+(both ? '<p>Of the ' + both + ' sites also tested in 2015 to 2019, ' + up + ' averaged higher in 2020 to 2024 and ' + down + ' averaged lower.</p>' : '') +
+'<p class="small">DAERA river monitoring data, 1990 to 2024. It is published raw, so it can contain errors. Readings of 5 mg/l or more are left out as likely errors, and sites with fewer than six readings are not shown. Tap a dot for its figures.</p>';
+} else if (m === 'sewage') {
+var V = WATER.overflows;
+if (!V || !V.length) return '<p class="small">The storm overflow list could not be loaded just now.</p>';
+var bad = 0, spills = 0, vol = 0, mon = 0;
+V.forEach(function (x) { if (/unsat/i.test(x.cls)) bad++; spills += x.spills; vol += x.vol; if (/^y/i.test(x.mon)) mon++; });
+h += '<p>When heavy rain overloads the sewers, storm overflows release untreated sewage mixed with rainwater into rivers. NI Water\'s own model predicts how often each one spills in a typical year.</p>' +
+'<dl class="facts">' +
+'<div><dt>Storm overflows on the map</dt><dd>' + nf(V.length) + '</dd></div><div><dt>Classed unsatisfactory</dt><dd>' + nf(bad) + '</dd></div>' +
+'<div><dt>Predicted spills a year</dt><dd>' + nf(spills) + '</dd></div><div><dt>Predicted volume a year</dt><dd>' + nf(vol / 1000) + ' thousand m³</dd></div>' +
+'<div><dt>Fitted with a monitor</dt><dd>' + nf(mon) + '</dd></div>' + (DATA && DATA.works ? '<div><dt>Treatment works on the map</dt><dd>' + nf(DATA.works.length) + '</dd></div>' : '') +
+'</dl><p class="small">Bigger dots spill more often. Red dots are classed unsatisfactory by NI Water. Grey dots are treatment works. From NI Water\'s May 2024 lists, published by DAERA. The spill figures are predictions from a model, not measurements, and not every site on the map drains to the lough.</p>';
+} else {
+var W = WATER.status;
+if (!W) return '<p class="small">The water status map could not be loaded just now.</p>';
+var cnt = {}, order = ['High', 'Good', 'Moderate', 'Poor', 'Bad', 'No data'];
+W.features.forEach(function (f) { var k = wfd(f.properties.F2018_statu)[0]; cnt[k] = (cnt[k] || 0) + 1; });
+var mxs = Math.max.apply(null, order.map(function (k) { return cnt[k] || 0; }).concat([1]));
+h += '<p>DAERA grades every river and lake from high to bad, looking at the wildlife, the chemistry and the flow. The target is good or better. This is the 2018 grading for the rivers and lakes around the lough.</p><div class="bars">';
+order.forEach(function (k) { if (cnt[k]) h += '<div class="bar"><span>' + k + '</span><span class="track"><span class="fill" style="display:block;width:' + (cnt[k] / mxs * 100).toFixed(0) + '%"></span></span><span class="val">' + cnt[k] + '</span></div>'; });
+h += '</div>';
+var F = WATER.failing && WATER.failing.features ? WATER.failing.features : [];
+if (F.length) h += '<p>' + F.length + ' of them, outlined in black, miss the target because of phosphorus alone: ' + F.map(function (f) { return esc(f.properties.NAME); }).join(', ') + '.</p>';
+h += '<p class="small">Number of water bodies in the map area at each grade, Water Framework Directive interim classification 2018. Heavily modified waters are graded on "ecological potential" and are shown in the same colours. Tap one for its name and grade.</p>';
+}
+return h;
+}
 function landSeg() {
 return '<div class="seg" role="group" aria-label="What to show on the map">' +
-[['rivers', 'River loads'], ['basins', 'Basins'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['fields', 'Fields'], ['incidents', 'Pollution']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (landMode() === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
+[['rivers', 'River loads'], ['basins', 'Basins'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['fields', 'Fields'], ['incidents', 'Pollution'], ['srp', 'River tests'], ['sewage', 'Sewage'], ['status', 'Water status']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (landMode() === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
 }
 function landPanel() {
 var h = '', m = landMode();
+if (m === 'srp' || m === 'sewage' || m === 'status') return waterPanel(m);
 if (!LAND) return '<p class="small">Loading the land data from DAERA. If this message stays, the service is not answering just now.</p>';
 if (m === 'basins') {
 if (!LAND.basins) return '<p class="small">The basin outlines could not be loaded just now.</p>';
@@ -434,14 +500,14 @@ function chip(attr, val, label, pressed, disabled) {
 return '<button type="button" class="chip" id="chip_' + attr + '_' + val + '" data-' + attr + '="' + val + '" aria-pressed="' + !!pressed + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
 }
 function layersHtml() {
-var O = state.on, missing = { basins: !LAYERS.basins, farms: !LAYERS.farms, algae: !LAYERS.algae, buoys: !LAYERS.buoys, works: !LAYERS.works, fields: !fieldsLayer, incidents: !LAYERS.incidents };
+var O = state.on, missing = { basins: !LAYERS.basins, farms: !LAYERS.farms, algae: !LAYERS.algae, buoys: !LAYERS.buoys, works: !LAYERS.works, fields: !fieldsLayer, incidents: !LAYERS.incidents, status: !LAYERS.status, srp: !LAYERS.srp, overflows: !LAYERS.overflows };
 return '<div class="lrow"><span class="llab">View</span>' +
 [['map', 'Map'], ['sat', 'Satellite'], ['daily', 'Daily photo']].map(function (g) { return chip('base', g[0], g[1], state.base === g[0]); }).join('') +
 (state.base === 'daily' ? '<input type="date" id="satDate" aria-label="Date of the daily photo" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '">' : '') + '</div>' +
 '<div class="lrow"><span class="llab">Shade by</span>' +
-[['none', 'Nothing'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['basins', 'Basins'], ['sup', 'Surface geology'], ['bed', 'Bedrock']].map(function (g) { return chip('shade', g[0], g[1], state.shade === g[0], missing[g[0]]); }).join('') + '</div>' +
+[['none', 'Nothing'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['basins', 'Basins'], ['status', 'Water status'], ['sup', 'Surface geology'], ['bed', 'Bedrock']].map(function (g) { return chip('shade', g[0], g[1], state.shade === g[0], missing[g[0]]); }).join('') + '</div>' +
 '<div class="lrow"><span class="llab">Show</span>' +
-[['zones', 'Bloom risk'], ['algae', 'Confirmed algae'], ['buoys', 'Buoys'], ['rivers', 'River loads'], ['works', 'Treatment works'], ['incidents', 'Pollution incidents'], ['fields', 'Field risk'], ['stake', 'Places at stake']].map(function (g) { return chip('on', g[0], g[1], O[g[0]], missing[g[0]]); }).join('') + '</div>';
+[['zones', 'Bloom risk'], ['algae', 'Confirmed algae'], ['buoys', 'Buoys'], ['rivers', 'River loads'], ['srp', 'River phosphorus tests'], ['works', 'Treatment works'], ['overflows', 'Storm overflows'], ['incidents', 'Pollution incidents'], ['fields', 'Field risk'], ['stake', 'Places at stake']].map(function (g) { return chip('on', g[0], g[1], O[g[0]], missing[g[0]]); }).join('') + '</div>';
 }
 function captionHtml(s) {
 var O = state.on, sh = state.shade, c = [];
@@ -450,6 +516,9 @@ if (state.base === 'sat') c.push('<span>Satellite: Sentinel-2 cloudless 2024, a 
 if (state.base === 'daily') c.push('<span>Daily photo for ' + fmtDate(state.satDate) + ' ' + state.satDate.slice(0, 4) + ', NASA Terra. Coarse, and cloud often hides the lough.</span>');
 if (sh === 'sup' || sh === 'bed') c.push('<span>' + (sh === 'sup' ? 'Surface geology' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>');
 if (sh === 'basins') c.push('<span class="key">Phosphorus per hectare a year: 0.8 kg ' + OCHRE.map(function (x) { return sw(x); }).join('') + ' 1.2 kg</span><span class="key">' + sw('#9aa3a8') + 'Drains elsewhere</span>');
+if (sh === 'status') c.push('<span class="key">Water status 2018: ' + ['HIGH', 'GOOD', 'MODERATE', 'POOR', 'BAD'].map(function (k) { return sw(WFD[k][1]) + WFD[k][0]; }).join(' ') + '</span><span>Dashed outline: fails on phosphorus alone</span>');
+if (O.srp && WATER && WATER.srp && WATER.srp.length) { var sb = srpBreaks(); c.push('<span class="key">Dissolved phosphorus in rivers, 2020 to 2024: under ' + sb[0].toFixed(2) + ' ' + VIOLETS.map(function (x) { return sw(x, true); }).join('') + ' over ' + sb[3].toFixed(2) + ' mg/l</span>'); }
+if (O.overflows) c.push('<span class="key">' + sw('#bf3528', true) + 'Storm overflow, unsatisfactory</span><span class="key">' + sw('#4f6b7a', true) + 'Other storm overflow</span>');
 if (sh === 'cover') c.push('<span>Land cover: Corine 2018, Copernicus. Yellow-green is pasture, pale yellow arable, red towns, blue-violet peat bog, green woodland.</span>');
 if (O.incidents) c.push('<span class="key">Pollution incidents per square km, 2011 to 2024: 1 ' + REDS.map(function (x) { return sw(x); }).join('') + ' 16 or more</span>');
 if (sh === 'farms' && LAND && LAND.farms) c.push('<span class="key">' + STOCK[state.stock][0] + ' per hectare farmed, 2019: ' + farmRange()[0].toFixed(1) + ' ' + BLUES.map(function (x) { return sw(x); }).join('') + ' ' + farmRange()[1].toFixed(1) + '</span>');
@@ -476,6 +545,8 @@ showLayer(GEO.sup, sh === 'sup'); showLayer(GEO.bed, sh === 'bed');
 showLayer(LAYERS.basins, sh === 'basins'); showLayer(LAYERS.farms, sh === 'farms'); showLayer(GEO.cover, sh === 'cover');
 if (sh === 'farms' && LAYERS.farms) LAYERS.farms.setStyle(farmStyle);
 showLayer(LAYERS.incidents, !!O.incidents);
+showLayer(LAYERS.status, sh === 'status'); showLayer(LAYERS.failing, sh === 'status');
+showLayer(LAYERS.srp, !!O.srp); showLayer(LAYERS.overflows, !!O.overflows);
 updateFields();
 showLayer(LAYERS.rivers, !!O.rivers); showLayer(LAYERS.works, !!O.works); showLayer(LAYERS.stake, !!O.stake);
 showLayer(LAYERS.algae, !!O.algae); showLayer(LAYERS.buoys, !!O.buoys);
@@ -502,6 +573,13 @@ if (!window.fetch) return;
 fetch('/api/land').then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) return;
 LAND = j; buildLand(); render();
+}).catch(function () {});
+}
+function loadWater() {
+if (!window.fetch) return;
+fetch('/api/water').then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok) return;
+WATER = j; buildWater(); render();
 }).catch(function () {});
 }
 function loadLive() {
@@ -549,6 +627,7 @@ render();
 loadLive();
 loadData();
 loadLand();
+loadWater();
 }
 start();
 })();
