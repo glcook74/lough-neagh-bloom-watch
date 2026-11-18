@@ -24,7 +24,11 @@ async function weatherYear(year, lastDay) {
 /* Whole-lough index for each usable satellite pass, from this site's own statistics feed. */
 async function satellite(host, years) {
   var jobs = []; years.forEach(function (y) { jobs.push([y, 1]); jobs.push([y, 2]); });
-  var got = await Promise.all(jobs.map(function (jb) { return fetch('https://' + host + '/api/satstats?year=' + jb[0] + '&half=' + jb[1]).then(function (r) { return r.json(); }).catch(function () { return null; }); }));
+  /* Three at a time, with one retry, so the satellite service is not swamped. */
+  var got = [], next = 0;
+  var one = async function (jb) { for (var a = 0; a < 2; a++) { try { var r = await fetch('https://' + host + '/api/satstats?year=' + jb[0] + '&half=' + jb[1]); var j = await r.json(); if (j && j.ok) return j; } catch (e) {} await new Promise(function (ok) { setTimeout(ok, 1500); }); } return null; };
+  var worker = async function () { while (next < jobs.length) { var i = next++; got[i] = await one(jobs[i]); } };
+  await Promise.all([worker(), worker(), worker()]);
   var days = {}, missing = 0; got.forEach(function (g) { if (!g || !g.ok) { missing++; return; } g.days.forEach(function (d) { days[d.date] = d.z; }); });
   var dates = Object.keys(days).sort(), zmax = [0, 0, 0, 0, 0, 0, 0, 0, 0];
   dates.forEach(function (d) { days[d].forEach(function (z, k) { if (z && z[2] > zmax[k]) zmax[k] = z[2]; }); });
@@ -89,7 +93,7 @@ module.exports = async function (req, res) {
         model: { alarmDays: alarmDays.length, first: alarmDays.length ? alarmDays[0].date : null, last: alarmDays.length ? alarmDays[alarmDays.length - 1].date : null, peak: mpk ? { date: mpk.date, score: r3(mpk.score) } : null, seasonTotal: r3(series.filter(function (d) { return inSeason(d.date); }).reduce(function (s, d) { return s + d.score; }, 0)) },
         weekly: weekly, passes: req.query.summary ? undefined : ps.map(function (s) { return [s.date.slice(5), +s.m.toFixed(3), +s.h.toFixed(2)]; }) };
     });
-    res.setHeader('Cache-Control', 'public, s-maxage=43200, stale-while-revalidate=604800');
+    res.setHeader('Cache-Control', sat.missing ? 'no-store' : 'public, s-maxage=43200, stale-while-revalidate=604800');
     res.status(200).json({ ok: true, madeOn: iso(now), weatherTo: lastDay, params: P, trainRho: r3(best.rho), alarmLevel: r3(thr), satelliteHalvesMissing: sat.missing, now: nowState, skill: skill, years: perYear });
   } catch (e) {
     console.warn('Outlook failed:', String(e && e.message));

@@ -1120,13 +1120,13 @@ el.innerHTML = h;
 var FC = null, FCSTATE = '';
 function loadFc() {
 if (FCSTATE || !window.fetch) return; FCSTATE = 'loading';
-fetch('/api/outlook').then(function (res) { return res.json(); }).then(function (j) { if (j && j.ok) { FC = j; FCSTATE = 'ok'; } else FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); }).catch(function () { FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); });
+fetch('/api/outlook?v=2').then(function (res) { return res.json(); }).then(function (j) { if (j && j.ok) { FC = j; FCSTATE = 'ok'; } else FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); }).catch(function () { FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); });
 }
 function dm(date) { return date ? shortDate(date.length === 5 ? '2000-' + date : date) : 'none'; }
 function strength(r) { return r == null ? 'could not be worked out' : r >= 0.7 ? 'strong' : r >= 0.5 ? 'moderate' : r >= 0.3 ? 'weak' : r > 0.1 ? 'very weak' : 'no better than chance'; }
 function fcYearChart(y, alarm) {
 var W = 560, H = 150, L = 34, Rr = 40, T = 10, B = 24, start = Date.UTC(y.year, 2, 1), end = Date.UTC(y.year, 10, 15), span = end - start;
-var X = function (md) { return L + (W - L - Rr) * (Date.parse(y.year + '-' + md + 'T00:00:00Z') - start) / span; }, top = Math.max(0.5, alarm * 1.6), Ys = function (v) { return T + (H - T - B) * (1 - Math.min(top, v) / top); }, Yi = function (v) { return T + (H - T - B) * (1 - (Math.max(-0.1, Math.min(0.5, v)) + 0.1) / 0.6); };
+var X = function (md) { return L + (W - L - Rr) * (Date.parse(y.year + '-' + md + 'T00:00:00Z') - start) / span; }, top = FC.top, Ys = function (v) { return T + (H - T - B) * (1 - Math.min(top, v) / top); }, Yi = function (v) { return T + (H - T - B) * (1 - (Math.max(-0.1, Math.min(0.5, v)) + 0.1) / 0.6); };
 var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + y.year + ': weather score and satellite index"><g font-family="var(--body)" font-size="12" fill="var(--muted)">';
 ['03', '04', '05', '06', '07', '08', '09', '10', '11'].forEach(function (m) { var x = X(m + '-01'); s += '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--line)"/><text x="' + (x + 4).toFixed(1) + '" y="' + (H - 8) + '">' + MONN[+m - 1] + '</text>'; });
 s += '<text x="' + (L - 4) + '" y="' + (Ys(0) + 4) + '" text-anchor="end">0</text><text x="' + (W - Rr + 4) + '" y="' + (Yi(0.1) + 4).toFixed(1) + '">0.1</text><text x="' + (W - Rr + 4) + '" y="' + (Yi(0.4) + 4).toFixed(1) + '">0.4</text></g>';
@@ -1137,6 +1137,7 @@ s += '<line x1="' + L + '" x2="' + (W - Rr) + '" y1="' + Ys(alarm).toFixed(1) + 
 return s + '</svg>';
 }
 function fcHtml() {
+FC.top = Math.max(FC.alarmLevel * 1.5, 1.15 * Math.max.apply(null, FC.years.map(function (y) { return Math.max.apply(null, y.weekly.map(function (w) { return w[1]; }).concat([0])); }))) || 0.5;
 var Y = FC.years, sk = FC.skill, next = FC.years[FC.years.length - 1].year + 1, done = Y.filter(function (y) { return y.summer && y.satellite.seasonUsable; });
 var h = '<h2>Outlook for ' + next + '</h2><p class="lede">What four seasons of satellite and weather records can and cannot say about next year, with a test of how far to trust it.</p>' +
 '<p class="notice"><strong>A range, not a prediction.</strong> How bad a season gets depends mostly on the summer\'s weather, which nobody can forecast this far ahead. This page shows the likely window and what different summers have produced before.</p>';
