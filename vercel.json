@@ -5,6 +5,9 @@
     },
     "api/outlook.js": {
       "maxDuration": 60
+    },
+    "api/river.js": {
+      "maxDuration": 60
     }
   }
 }
