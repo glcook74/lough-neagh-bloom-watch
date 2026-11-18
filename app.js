@@ -855,7 +855,7 @@ var next = function () {
 var job = jobs.shift(); if (!job) return;
 fetch('/api/satstats?year=' + job[0] + '&half=' + job[1]).then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) SAT.failed++; else { if (j.zones) SAT.zones = j.zones; j.days.forEach(function (d) { SAT.days[d.date] = d.z; }); }
-}).catch(function () { SAT.failed++; }).then(function () { SAT.done++; if (location.hash === '#satellite') renderSat(); next(); });
+}).catch(function () { SAT.failed++; }).then(function () { SAT.done++; if (location.hash === '#satellite') renderSat(); if (location.hash === '#investigate' && (SAT.done === SAT.total || !INV.date)) renderInv(); next(); });
 };
 next(); next(); next();
 }
@@ -943,7 +943,7 @@ SAT.zones.map(function (z, k) { var t = '<tr><th scope="row">' + z.name + '</th>
 var topDays = lough.slice().sort(function (a, b) { return b.lough[key] - a.lough[key]; }).slice(0, 12);
 h += '<h3>The highest days</h3><p class="small">Open any of these on the main map to see the picture behind the number.</p><div class="tablewrap"><table class="sat days"><thead><tr><th class="lh" scope="col">Day</th><th scope="col">Average index</th><th scope="col">Water above 0.1</th><th class="lh" scope="col">Highest area</th><th scope="col"></th></tr></thead><tbody>' + topDays.map(function (r) {
 var best = -1; r.z.forEach(function (z, k) { if (z && (best < 0 || z.m > r.z[best].m)) best = k; });
-return '<tr><th scope="row">' + fmtDate(r.date) + ' ' + r.year + '</th><td>' + r.lough.m.toFixed(2) + '</td><td>' + Math.round(r.lough.h * 100) + '%</td><td class="lh">' + (best < 0 ? '' : SAT.zones[best].name) + '</td><td><button type="button" class="chip" data-satgo="' + r.date + '">See on map</button></td></tr>';
+return '<tr><th scope="row">' + fmtDate(r.date) + ' ' + r.year + '</th><td>' + r.lough.m.toFixed(2) + '</td><td>' + Math.round(r.lough.h * 100) + '%</td><td class="lh">' + (best < 0 ? '' : SAT.zones[best].name) + '</td><td><button type="button" class="chip" data-invgo="' + r.date + '">Investigate</button> <button type="button" class="chip" data-satgo="' + r.date + '">See on map</button></td></tr>';
 }).join('') + '</tbody></table></div>';
 h += '<h3>How to read this</h3><ul class="notes">' +
 '<li>The index is the Normalised Difference Chlorophyll Index. It compares two shades of red light that algae pigment reflects differently. Higher means greener, more pigmented water.</li>' +
@@ -966,13 +966,163 @@ state.base = 's2'; state.s2algae = true; state.s2year = date.slice(0, 4); state.
 location.hash = '#explore'; render();
 if ($('map')) $('map').scrollIntoView({ block: 'center' });
 }
+/* ---------- investigate a day: what led up to it ---------- */
+var INV = { date: null, data: {} }, INV_BEFORE = 70, INV_AFTER = 7;
+var BUOYCOL = { "Rea's Wood": '#b05fc4', 'Toome': '#3b8fd9', 'Washing Bay': '#e07b39' };
+var BUOYWHERE = { "Rea's Wood": 'Antrim Bay, in the north-east', 'Toome': 'the north-west, by the outflow', 'Washing Bay': 'the south-west' };
+var ZBEAR = [315, 0, 45, 270, null, 90, 225, 180, 135];
+function compass(d) { return ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(d / 45) % 8]; }
+function angDiff(a, b) { var d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+function addDays(date, n) { return new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+function longDate(d) { return fmtDate(d) + ' ' + d.slice(0, 4); }
+function shortDate(d) { return +d.slice(8, 10) + ' ' + MONN[+d.slice(5, 7) - 1]; }
+function vecDir(days) { var x = 0, y = 0, s = 0; days.forEach(function (d) { x += d.w * Math.sin(d.dir * Math.PI / 180); y += d.w * Math.cos(d.dir * Math.PI / 180); s += d.w; }); return { dir: (Math.atan2(x, y) * 180 / Math.PI + 360) % 360, steady: s ? Math.sqrt(x * x + y * y) / s : 0 }; }
+function loadEvent(date) {
+if (INV.data[date] || !window.fetch) return;
+INV.data[date] = 'loading';
+fetch('/api/event?date=' + date + '&before=' + INV_BEFORE + '&after=' + INV_AFTER + '&v=2').then(function (res) { return res.json(); }).then(function (j) {
+INV.data[date] = j && j.ok ? j : 'fail'; if (location.hash === '#investigate') renderInv();
+}).catch(function () { INV.data[date] = 'fail'; if (location.hash === '#investigate') renderInv(); });
+}
+function invGo(date) { INV.date = date; location.hash = '#investigate'; renderInv(); window.scrollTo(0, 0); }
+/* Pull the feeds into one day-by-day list. */
+function invModel(date) {
+var ev = INV.data[date], W = ev.weather && ev.weather.days ? ev.weather.days : [], at = -1;
+W.forEach(function (d, i) { if (d.date === date) at = i; });
+var rain = ev.rain && ev.rain.basins ? ev.rain : null, buoys = (ev.buoys || []).filter(function (b) { return b && b.metrics; }).map(function (b) {
+var m = {}; Object.keys(b.metrics).forEach(function (k) { var o = m[k] = {}; b.metrics[k].forEach(function (x) { o[x[0]] = [x[1], x[2]]; }); });
+return { name: b.name, pc: m.BGA_PC_Fluorescence || {}, temp: m.Temp || {}, o2: m.Dissolved_O2_Saturation || {}, turb: m.Turbidity || {} };
+});
+var sat = satModel().filter(function (r) { return r.date >= ev.from && r.date <= addDays(date, INV_AFTER); });
+return { ev: ev, W: W, at: at, rain: rain, buoys: buoys, sat: sat };
+}
+function invFindings(date, M) {
+var f = [], W = M.W, at = M.at, before = at >= 0 ? W.slice(0, at) : W, lough = M.sat.filter(function (r) { return r.lough; });
+var onDay = lough.filter(function (r) { return r.date === date; })[0], near = onDay || lough.filter(function (r) { return Math.abs(Date.parse(r.date) - Date.parse(date)) <= 3 * 86400000; }).sort(function (a, b) { return Math.abs(Date.parse(a.date) - Date.parse(date)) - Math.abs(Date.parse(b.date) - Date.parse(date)); })[0];
+/* the satellite on the day */
+var top = null;
+if (near) {
+var zs = near.z.map(function (z, k) { return z ? { k: k, m: z.m } : null; }).filter(Boolean).sort(function (a, b) { return b.m - a.m; }); top = zs;
+f.push(['The satellite', (onDay ? 'On the day' : 'There was no clear pass on the day. The nearest, on ' + longDate(near.date) + ',') + ' the whole lough averaged <strong>' + near.lough.m.toFixed(2) + '</strong> on the algae index, with ' + Math.round(near.lough.h * 100) + '% of the clear water above 0.1. ' + (zs.length > 1 ? 'Highest: ' + SAT.zones[zs[0].k].name + ' (' + zs[0].m.toFixed(2) + '). Lowest: ' + SAT.zones[zs[zs.length - 1].k].name + ' (' + zs[zs.length - 1].m.toFixed(2) + ').' : '')]);
+var prev = lough.filter(function (r) { return r.date < near.date; }).slice(-1)[0];
+if (prev) { var gap = Math.round((Date.parse(near.date) - Date.parse(prev.date)) / 86400000), rise = near.lough.m - prev.lough.m;
+if (rise >= 0.08 && gap <= 6) f.push(['A sudden jump', 'The index rose from ' + prev.lough.m.toFixed(2) + ' to ' + near.lough.m.toFixed(2) + ' in ' + gap + (gap === 1 ? ' day' : ' days') + '. Algae do not multiply that fast, so this points to algae already in the water <strong>rising to the surface</strong>, not new growth.']);
+else if (gap > 10) f.push(['A gap before it', 'The previous usable pass was ' + gap + ' days earlier (' + longDate(prev.date) + ', index ' + prev.lough.m.toFixed(2) + '). Cloud hid what happened in between, so lean on the buoys for that stretch.']);
+else f.push(['The pass before', longDate(prev.date) + ' averaged ' + prev.lough.m.toFixed(2) + ', a change of ' + (rise >= 0 ? '+' : '−') + Math.abs(rise).toFixed(2) + ' in ' + gap + (gap === 1 ? ' day' : ' days') + '.']); }
+} else f.push(['The satellite', 'No usable satellite pass within three days of this date, so there is no picture of where the algae was.']);
+if (at < 0) { f.push(['Weather', 'Weather records for this date are not available yet. The archive runs about six days behind.']); return f; }
+/* calm */
+var d0 = W[at], d1 = at > 0 ? W[at - 1] : null, calm = d0.calmHours + (d1 ? d1.calmHours : 0);
+if (d1 && calm >= 24 && (d0.w + d1.w) / 2 < 7) f.push(['Calm water', 'The wind was very light: ' + d1.w + ' mph the day before and ' + d0.w + ' mph on the day, with <strong>' + calm + ' of 48 hours below 6 mph</strong>. Blue-green algae float, so calm lets them gather at the surface where the satellite sees them.']);
+else if (d0.w >= 12) f.push(['A windy day', 'The wind averaged ' + d0.w + ' mph on the day, enough to mix algae down through the water. A high reading in wind like this suggests a lot of algae in the water.']);
+else f.push(['Wind on the day', 'The wind averaged ' + d0.w + ' mph, from the ' + compass(d0.dir) + ', with ' + d0.calmHours + ' calm hours.']);
+/* wind direction against where the algae was */
+var side = function (dir) { var to = (dir + 180) % 360, down = [], up = []; if (top) top.forEach(function (z) { var b = ZBEAR[z.k]; if (b == null) return; if (angDiff(b, to) <= 60) down.push(z.m); else if (angDiff(b, to) >= 120) up.push(z.m); }); return down.length && up.length ? avg(down) - avg(up) : null; };
+if (top && top.length >= 5) {
+var dayDiff = side(d0.dir), prior = before.slice(-21), pv = prior.length >= 7 ? vecDir(prior) : null, pDiff = pv && pv.steady >= 0.25 ? side(pv.dir) : null;
+var txt = 'On the day the wind came from the ' + compass(d0.dir) + ', which pushes surface water towards the ' + compass((d0.dir + 180) % 360) + ' shore. ';
+txt += dayDiff == null ? '' : dayDiff >= 0.03 ? 'The algae index was higher on that side (by ' + dayDiff.toFixed(2) + '), so <strong>the day\'s wind fits the pattern</strong>. ' : dayDiff <= -0.03 ? 'But the index was higher on the opposite side (by ' + Math.abs(dayDiff).toFixed(2) + '), so <strong>the day\'s wind does not explain where the algae was</strong>. ' : 'The two sides of the lough were about the same, so the day\'s wind made little difference. ';
+if (pv) txt += pv.steady < 0.25 ? 'Over the three weeks before, the wind had no steady direction.' : 'Over the three weeks before, the wind came mostly from the ' + compass(pv.dir) + ', pushing towards the ' + compass((pv.dir + 180) % 360) + ' shore. ' + (pDiff == null ? '' : pDiff >= 0.03 ? '<strong>That matches where the algae was highest</strong>, which suggests it had been gathering there for weeks.' : pDiff <= -0.03 ? 'That is the opposite side from where the algae was highest.' : 'The algae was spread evenly, so that made little difference.');
+f.push(['Wind direction', txt]);
+}
+/* warm, calm, sunny spells */
+var good = before.map(function (d) { return d.tmax >= 19 && d.w < 9 && d.sun >= 9; }), spells = [], run = null;
+good.forEach(function (g, i) { if (g) { if (!run) run = { a: i, b: i }; else run.b = i; } if ((!g || i === good.length - 1) && run) { if (run.b - run.a >= 1) spells.push(run); run = null; } });
+var nGood = good.filter(Boolean).length;
+f.push(['Growing weather', nGood ? '<strong>' + nGood + ' of the ' + before.length + ' days before</strong> were warm, sunny and light-winded, the conditions algae grow fastest in.' + (spells.length ? ' Spells of two days or more: ' + spells.map(function (s) { return shortDate(before[s.a].date) + ' to ' + shortDate(before[s.b].date); }).join(', ') + '.' : '') : 'None of the ' + before.length + ' days before were warm, sunny and light-winded together.']);
+/* water temperature */
+var wt = before.map(function (d) { var v = M.buoys.map(function (b) { return b.temp[d.date] ? b.temp[d.date][0] : null; }).filter(function (x) { return x != null; }); return v.length ? { date: d.date, t: avg(v) } : null; }).filter(Boolean);
+if (wt.length) { var hot = wt.slice().sort(function (a, b) { return b.t - a.t; })[0], above = wt.filter(function (x) { return x.t >= 18; }).length; f.push(['Water temperature', 'The buoys measured the water at 18°C or more on <strong>' + above + ' of ' + wt.length + ' days</strong>, peaking at ' + hot.t.toFixed(1) + '°C on ' + shortDate(hot.date) + '. Blue-green algae grow fastest in water above about 18°C.']); }
+/* dry spell and rain */
+var dry = 0, bestDry = null, runD = null;
+before.forEach(function (d, i) { if (d.rain < 1) { if (!runD) runD = { a: i, b: i }; else runD.b = i; } if ((d.rain >= 1 || i === before.length - 1) && runD) { if (!bestDry || runD.b - runD.a > bestDry.b - bestDry.a) bestDry = runD; runD = null; } });
+if (bestDry && bestDry.b - bestDry.a >= 6) f.push(['A dry spell', 'No real rain for ' + (bestDry.b - bestDry.a + 1) + ' days, from ' + shortDate(before[bestDry.a].date) + ' to ' + shortDate(before[bestDry.b].date) + '. Less river water means slower flushing and clearer water for algae to grow in.']);
+if (M.rain) { var ri = M.rain.dates.indexOf(date), tot = function (n) { return M.rain.basins.map(function (b) { var s = 0; for (var i = Math.max(0, ri - n); i < ri; i++) s += b.mm[i] || 0; return { name: b.name, mm: s }; }).sort(function (a, b) { return b.mm - a.mm; }); };
+if (ri > 0) { var t14 = tot(14), wet = t14.filter(function (x) { return x.mm >= 25; });
+f.push(['Rain and the rivers', wet.length ? 'In the 14 days before, the wettest basins were ' + t14.slice(0, 3).map(function (x) { return '<strong>' + x.name + '</strong> (' + Math.round(x.mm) + ' mm)'; }).join(', ') + '. The driest was ' + t14[t14.length - 1].name + ' (' + Math.round(t14[t14.length - 1].mm) + ' mm). Heavy rain washes phosphorus off fields and sets off storm overflows, so those rivers are the ones most likely to have carried a fresh load in.' : 'Little rain fell in the 14 days before (the wettest basin, ' + t14[0].name + ', had ' + Math.round(t14[0].mm) + ' mm), so a fresh wash of nutrients from the rivers is unlikely to be the trigger.']); } }
+/* buoys */
+var bs = M.buoys.map(function (b) { var days = before.map(function (d) { return b.pc[d.date] ? { date: d.date, v: b.pc[d.date][0] } : null; }).filter(Boolean); if (!days.length) return null; var pk = days.slice().sort(function (x, y) { return y.v - x.v; })[0]; return { name: b.name, n: days.length, peak: pk, high: days.filter(function (x) { return x.v >= 3; }).length, day: b.pc[date] ? b.pc[date][0] : null }; }).filter(Boolean).sort(function (a, b) { return b.high - a.high || b.peak.v - a.peak.v; });
+if (bs.length) { f.push(['The buoys', bs.map(function (b) { return '<strong>' + b.name + '</strong> (' + BUOYWHERE[b.name] + ') read 3 or more on ' + b.high + ' of ' + b.n + ' days, peaking at ' + b.peak.v.toFixed(1) + ' on ' + shortDate(b.peak.date) + (b.day != null ? ', and ' + b.day.toFixed(1) + ' on the day' : ''); }).join('. ') + '. The buoy with the most high days shows where algae had been building longest.']);
+if (near && near.lough.m >= 0.15 && bs.every(function (b) { return b.day != null && b.day < b.peak.v / 2; })) f.push(['Buoys low, satellite high', 'The buoys read lower on the day than at their peaks, while the satellite read high. That fits algae floating at the surface above the sensors. The depth of the sensors has not been confirmed.']);
+var o2 = []; M.buoys.forEach(function (b) { before.forEach(function (d) { if (b.o2[d.date] && b.o2[d.date][0] >= 130 && o2.indexOf(d.date) < 0) o2.push(d.date); }); });
+if (o2.length) f.push(['Oxygen', 'At least one buoy averaged over 130% oxygen on ' + o2.length + ' days (' + o2.sort().slice(0, 8).map(shortDate).join(', ') + (o2.length > 8 ? ' and more' : '') + '). Oxygen that high means algae were growing fast on those days.']); }
+else f.push(['The buoys', 'No buoy readings are available for this period.']);
+return f;
+}
+function invChart(M, date, title, lo, hi, draw, unit, last) {
+var W = 560, H = last ? 136 : 118, L = 40, Rr = 8, T = 8, B = last ? 28 : 10, n = M.W.length;
+var X = function (i) { return L + (W - L - Rr) * (i + 0.5) / n; }, Y = function (v) { return T + (H - T - B) * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)); }, bw = (W - L - Rr) / n;
+var s = '<div class="invchart"><div class="charttitle">' + title + '</div><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + title.replace(/<[^>]+>/g, '') + '"><g font-family="var(--body)" font-size="12" fill="var(--muted)">';
+[lo, (lo + hi) / 2, hi].forEach(function (v) { s += '<line x1="' + L + '" x2="' + (W - Rr) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" stroke="var(--line)"/><text x="' + (L - 5) + '" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end">' + (Math.abs(hi - lo) < 2 ? v.toFixed(1) : Math.round(v)) + '</text>'; });
+M.W.forEach(function (d, i) { var back = M.at - i; if (back % 14 === 0 || (M.at < 0 && i % 14 === 0)) { s += '<line x1="' + X(i).toFixed(1) + '" x2="' + X(i).toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--line)" stroke-dasharray="2 3"/>'; if (last) s += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + shortDate(d.date) + '</text>'; } });
+s += '</g>';
+if (M.at >= 0) s += '<rect x="' + (X(M.at) - bw / 2).toFixed(1) + '" y="' + T + '" width="' + Math.max(2, bw).toFixed(1) + '" height="' + (H - T - B) + '" fill="var(--high)" opacity="0.22"/>';
+s += draw(X, Y, bw, function (date) { for (var i = 0; i < n; i++) if (M.W[i].date === date) return i; return -1; });
+return s + '</svg>' + (unit ? '<div class="legend">' + unit + '</div>' : '') + '</div>';
+}
+function line(pts, col, w) { var segs = [], cur = []; pts.forEach(function (p) { if (p) cur.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); else if (cur.length) { segs.push(cur); cur = []; } }); if (cur.length) segs.push(cur); return segs.map(function (sg) { return sg.length > 1 ? '<polyline fill="none" stroke="' + col + '" stroke-width="' + (w || 2) + '" stroke-linejoin="round" points="' + sg.join(' ') + '"/>' : '<circle cx="' + sg[0].split(',')[0] + '" cy="' + sg[0].split(',')[1] + '" r="2" fill="' + col + '"/>'; }).join(''); }
+function invHtml(date) {
+var M = invModel(date), W = M.W, key = function (col, txt, dot) { return '<span class="key"><span class="sw' + (dot ? ' dot' : '') + '" style="background:' + col + '"></span>' + txt + '</span>'; };
+var h = '<h3>What the data suggests for ' + longDate(date) + '</h3><dl class="invfinds">' + invFindings(date, M).map(function (x) { return '<div><dt>' + x[0] + '</dt><dd>' + x[1] + '</dd></div>'; }).join('') + '</dl>';
+if (!W.length) return h;
+h += '<h3>The ' + INV_BEFORE + ' days before, on one timeline</h3><p class="small">Every chart shares the same dates. The red band is the day you chose. Dotted lines are two weeks apart.</p><div class="chart invstack">';
+var lough = M.sat.filter(function (r) { return r.lough; }), sHi = Math.max(0.3, Math.ceil(Math.max.apply(null, lough.map(function (r) { return Math.max.apply(null, r.z.filter(Boolean).map(function (z) { return z.m; })); }).concat([0.3])) * 10) / 10);
+h += invChart(M, date, 'Satellite algae index', -0.1, sHi, function (X, Y, bw, ix) { var s = '<line x1="40" x2="552" y1="' + Y(0.1).toFixed(1) + '" y2="' + Y(0.1).toFixed(1) + '" stroke="var(--muted)" stroke-dasharray="5 4"/>'; lough.forEach(function (r) { var i = ix(r.date); if (i < 0) return; var zz = r.z.filter(Boolean).map(function (z) { return z.m; }); s += '<line x1="' + X(i).toFixed(1) + '" x2="' + X(i).toFixed(1) + '" y1="' + Y(Math.min.apply(null, zz)).toFixed(1) + '" y2="' + Y(Math.max.apply(null, zz)).toFixed(1) + '" stroke="var(--muted)" stroke-width="2"/><circle cx="' + X(i).toFixed(1) + '" cy="' + Y(r.lough.m).toFixed(1) + '" r="4.5" fill="' + rampColour(r.lough.m).bg + '" stroke="var(--ink)" stroke-width="1"><title>' + longDate(r.date) + ': ' + r.lough.m.toFixed(2) + '</title></circle>'; }); return s; }, '<span class="key">Dot: whole lough on each usable pass. Bar: lowest to highest area. Dashed line: 0.1. Gaps are cloud.</span>');
+var pcMax = 5; M.buoys.forEach(function (b) { W.forEach(function (d) { if (b.pc[d.date] && b.pc[d.date][0] > pcMax) pcMax = b.pc[d.date][0]; }); }); pcMax = Math.ceil(pcMax / 5) * 5;
+if (M.buoys.length) h += invChart(M, date, 'Buoy algae pigment, daily average', 0, pcMax, function (X, Y) { return M.buoys.map(function (b) { return line(W.map(function (d, i) { return b.pc[d.date] ? [X(i), Y(b.pc[d.date][0])] : null; }), BUOYCOL[b.name] || '#888888'); }).join(''); }, M.buoys.map(function (b) { return key(BUOYCOL[b.name] || '#888888', b.name, true); }).join('') + '<span class="key">Relative units from the sensor, not a concentration.</span>');
+var water = W.map(function (d) { var v = M.buoys.map(function (b) { return b.temp[d.date] ? b.temp[d.date][0] : null; }).filter(function (x) { return x != null; }); return v.length ? avg(v) : null; });
+h += invChart(M, date, 'Temperature, °C', 10, 28, function (X, Y) { return '<line x1="40" x2="552" y1="' + Y(18).toFixed(1) + '" y2="' + Y(18).toFixed(1) + '" stroke="var(--muted)" stroke-dasharray="5 4"/>' + line(W.map(function (d, i) { return [X(i), Y(d.tmax)]; }), '#c44569') + line(water.map(function (v, i) { return v == null ? null : [X(i), Y(v)]; }), '#3b8fd9', 2.5); }, key('#c44569', 'Warmest air of the day', true) + key('#3b8fd9', 'Water at the buoys', true) + '<span class="key">Dashed line: 18°C.</span>');
+h += invChart(M, date, 'Wind, mph, with arrows showing where it blew towards', 0, 24, function (X, Y, bw) { return W.map(function (d, i) { var calm = d.w < 6; return '<rect x="' + (X(i) - bw * 0.4).toFixed(1) + '" y="' + Y(d.w).toFixed(1) + '" width="' + (bw * 0.8).toFixed(1) + '" height="' + (Y(0) - Y(d.w)).toFixed(1) + '" fill="' + (calm ? '#2f9e6b' : 'var(--muted)') + '" opacity="' + (calm ? 1 : 0.55) + '"><title>' + shortDate(d.date) + ': ' + d.w + ' mph from the ' + compass(d.dir) + '</title></rect><path transform="translate(' + X(i).toFixed(1) + ',' + (Y(24) + 7) + ') rotate(' + ((d.dir + 180) % 360) + ')" d="M0,-5 L2.6,3 L0,1.4 L-2.6,3 Z" fill="var(--ink)"/>'; }).join(''); }, key('#2f9e6b', 'Calm day, under 6 mph') + '<span class="key">An arrow pointing right means the wind pushed water east.</span>');
+h += invChart(M, date, 'Rain over the lough, mm a day', 0, Math.max(20, Math.ceil(Math.max.apply(null, W.map(function (d) { return d.rain; })) / 10) * 10), function (X, Y, bw) { return W.map(function (d, i) { return d.rain > 0 ? '<rect x="' + (X(i) - bw * 0.4).toFixed(1) + '" y="' + Y(d.rain).toFixed(1) + '" width="' + (bw * 0.8).toFixed(1) + '" height="' + (Y(0) - Y(d.rain)).toFixed(1) + '" fill="#3b8fd9"><title>' + shortDate(d.date) + ': ' + d.rain + ' mm</title></rect>' : ''; }).join(''); }, '', true);
+h += '</div>';
+/* week by week */
+if (M.at >= 0) {
+var weeks = []; for (var wk = 0; wk < 10; wk++) { var b = M.at - wk * 7, a = b - 6; if (a < 0) break; weeks.unshift(W.slice(a, b + 1)); }
+h += '<h3>Week by week</h3><p class="small">Each row is seven days, ending with the week of the day you chose.</p><div class="tablewrap"><table class="sat inv"><thead><tr><th class="lh" scope="col">Week</th><th scope="col">Warmest air</th><th scope="col">Water</th><th scope="col">Wind</th><th scope="col">Calm days</th><th scope="col">Sun a day</th><th scope="col">Rain</th><th class="lh" scope="col">Wettest basin</th><th class="lh" scope="col">Highest buoy</th><th scope="col">Satellite</th></tr></thead><tbody>' + weeks.map(function (wkd) {
+var ds = wkd.map(function (d) { return d.date; }), v = vecDir(wkd), wv = []; wkd.forEach(function (d, k) { var i = M.at - (weeks.length - 1 - weeks.indexOf(wkd)) * 7 - 6 + k; if (water[i] != null) wv.push(water[i]); });
+var wb = null; if (M.rain) M.rain.basins.forEach(function (bb) { var s = 0; ds.forEach(function (d) { var i = M.rain.dates.indexOf(d); if (i >= 0) s += bb.mm[i] || 0; }); if (!wb || s > wb.mm) wb = { name: bb.name, mm: s }; });
+var hb = null; M.buoys.forEach(function (bb) { ds.forEach(function (d) { if (bb.pc[d] && (!hb || bb.pc[d][0] > hb.v)) hb = { name: bb.name, v: bb.pc[d][0] }; }); });
+var sv = lough.filter(function (r) { return ds.indexOf(r.date) >= 0; }).sort(function (x, y) { return y.lough.m - x.lough.m; })[0], col = sv ? rampColour(sv.lough.m) : null;
+return '<tr><th scope="row">' + shortDate(ds[0]) + ' to ' + shortDate(ds[6]) + '</th><td>' + Math.max.apply(null, wkd.map(function (d) { return d.tmax; })).toFixed(0) + '°C</td><td>' + (wv.length ? avg(wv).toFixed(1) + '°C' : '') + '</td><td>' + avg(wkd.map(function (d) { return d.w; })).toFixed(0) + ' mph ' + (v.steady >= 0.3 ? 'from ' + compass(v.dir) : 'mixed') + '</td><td>' + wkd.filter(function (d) { return d.w < 6; }).length + '</td><td>' + avg(wkd.map(function (d) { return d.sun; })).toFixed(0) + ' h</td><td>' + wkd.reduce(function (s, d) { return s + d.rain; }, 0).toFixed(0) + ' mm</td><td class="lh">' + (wb && wb.mm >= 1 ? wb.name + ' ' + wb.mm.toFixed(0) + ' mm' : 'Dry') + '</td><td class="lh">' + (hb ? hb.name + ' ' + hb.v.toFixed(1) : '') + '</td><td>' + (sv ? '<span class="cell" style="background:' + col.bg + ';color:' + col.fg + '">' + sv.lough.m.toFixed(2) + '</span>' : 'Cloud') + '</td></tr>';
+}).join('') + '</tbody></table></div>';
+}
+/* basin rain */
+if (M.rain && M.rain.dates.indexOf(date) > 0) { var ri = M.rain.dates.indexOf(date), sum = function (bb, n) { var s = 0; for (var i = Math.max(0, ri - n); i < ri; i++) s += bb.mm[i] || 0; return s; };
+h += '<h3>Rain over each river basin</h3><p class="small">Total rain before the day. More rain means more river water, more run-off from fields and more storm overflow spills. We do not hold river flows or 2026 river phosphorus tests, so this is the nearest stand-in.</p><div class="tablewrap"><table class="sat inv"><thead><tr><th class="lh" scope="col">Basin</th><th scope="col">Last 7 days</th><th scope="col">Last 14 days</th><th scope="col">Last 30 days</th></tr></thead><tbody>' + M.rain.basins.slice().sort(function (x, y) { return sum(y, 14) - sum(x, 14); }).map(function (bb) { return '<tr><th scope="row">' + bb.name + '</th><td>' + sum(bb, 7).toFixed(0) + ' mm</td><td>' + sum(bb, 14).toFixed(0) + ' mm</td><td>' + sum(bb, 30).toFixed(0) + ' mm</td></tr>'; }).join('') + '</tbody></table></div>'; }
+h += '<p><button type="button" class="chip" data-satgo="' + date + '">See the satellite picture for this day on the map</button></p>';
+h += '<h3>What this cannot tell you</h3><ul class="notes">' +
+'<li>These are clues that fit together, not proof of a cause. Use them to decide where to look and what to sample.</li>' +
+'<li>There are no river flow figures and no river phosphorus tests after 2024, so a river\'s part can only be judged from rainfall and the nearest buoy.</li>' +
+'<li>Wind that carries river water along a shore also pushes algae there from the rest of the lough. The data cannot separate the two.</li>' +
+'<li>Phosphorus released from the lough bed in warm, calm weather is not measured by anything here.</li>' +
+'<li>Weather is from a weather model for the centre of the lough, not a weather station. Basin rain is taken at one point per basin.</li>' +
+'<li>The buoys sit at three fixed spots and their readings are provisional. The satellite index is not checked against water samples.</li></ul>';
+return h;
+}
+function renderInv() {
+var el = $('invBody'); if (!el) return;
+loadSat();
+var rows = SAT.zones ? satModel().filter(function (r) { return r.lough; }) : [];
+if (!INV.date && rows.length && SAT.done === SAT.total) INV.date = rows.slice().sort(function (a, b) { return b.lough.m - a.lough.m; })[0].date;
+var maxDay = addDays(new Date().toISOString().slice(0, 10), -6);
+var h = '<h2>What led up to a day?</h2><p class="lede">Pick any date. This pulls together the weather, the rain over each river basin, the buoy readings and the satellite passes for the ' + INV_BEFORE + ' days before, and sets out what they suggest.</p>' +
+'<div class="layers"><div class="lrow"><span class="llab">Date</span><input type="date" id="invDate" aria-label="Date to investigate" min="2023-03-15" max="' + maxDay + '" value="' + (INV.date || '') + '"></div>' +
+'<div class="lrow"><span class="llab">Or a satellite day</span>' + (rows.length ? '<select id="invPick" aria-label="Choose a day the satellite saw"><option value="">Choose a day</option>' + rows.slice().reverse().map(function (r) { return '<option value="' + r.date + '"' + (r.date === INV.date ? ' selected' : '') + '>' + longDate(r.date) + ' · index ' + r.lough.m.toFixed(2) + '</option>'; }).join('') + '</select>' : '<span class="small">Loading the satellite days.</span>') + '</div></div>';
+if (!INV.date) h += '<p class="small" role="status">' + (SAT.done < SAT.total || !SAT.total ? 'Loading the satellite record to find the highest day.' : 'Choose a date above.') + '</p>';
+else { loadEvent(INV.date); var ev = INV.data[INV.date];
+if (ev === 'loading' || !ev) h += '<p class="small" role="status">Gathering the weather, rain and buoy readings for ' + longDate(INV.date) + '. This takes a few seconds.</p>';
+else if (ev === 'fail') h += '<p class="small">The records for this date could not be loaded. Please try again in a few minutes.</p>';
+else if (!SAT.zones) h += '<p class="small" role="status">Loading the satellite record.</p>';
+else h += invHtml(INV.date); }
+el.innerHTML = h;
+}
 function showView() {
-var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : 'Map';
-['Map', 'Analysis', 'Areas', 'Satellite'].forEach(function (n) {
+var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : location.hash === '#investigate' ? 'Investigate' : 'Map';
+['Map', 'Analysis', 'Areas', 'Satellite', 'Investigate'].forEach(function (n) {
 $('view' + n).hidden = n !== v;
 if (n === v) $('tab' + n).setAttribute('aria-current', 'page'); else $('tab' + n).removeAttribute('aria-current');
 });
-if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (MAP) MAP.invalidateSize();
+if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (v === 'Investigate') renderInv(); else if (MAP) MAP.invalidateSize();
 }
 /* ---------- Sentinel-2 pictures for a chosen day ---------- */
 var S2BOX = [[54.42, -6.78], [54.82, -6.06]], S2DAYS = {}, S2IMG = {}, S2STATE = { 'true': '', algae: '' };
@@ -1142,6 +1292,7 @@ preset();
 document.addEventListener('click', function (e) {
 var t = e.target.closest ? e.target.closest('button') : null;
 if (!t) return;
+if (t.dataset.invgo) { invGo(t.dataset.invgo); return; }
 if (t.dataset.satgo) { satGo(t.dataset.satgo); return; }
 if (t.dataset.saty) { satOff[t.dataset.saty] = !satOff[t.dataset.saty]; renderSat(); if ($(t.id)) $(t.id).focus({ preventScroll: true }); return; }
 if (t.dataset.satm) { satMetric = t.dataset.satm; renderSat(); if ($(t.id)) $(t.id).focus({ preventScroll: true }); return; }
@@ -1166,6 +1317,7 @@ var id = t.id; render();
 if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
 });
 document.addEventListener('change', function (e) {
+if (e.target && (e.target.id === 'invDate' || e.target.id === 'invPick') && /^20\d\d-\d\d-\d\d$/.test(e.target.value)) { INV.date = e.target.value; renderInv(); return; }
 if (e.target && e.target.id === 's2year' && /^(20\d\d)?$/.test(e.target.value)) { state.s2year = e.target.value; state.s2date = null; var known = s2Days(); if (Array.isArray(known) && known.length) state.s2date = (known.filter(function (x) { return x.cloud <= 20; })[0] || known[0]).date; render(); if ($('s2year')) $('s2year').focus({ preventScroll: true }); return; }
 if (e.target && e.target.id === 's2date' && /^20\d\d-\d\d-\d\d$/.test(e.target.value)) { state.s2date = e.target.value; render(); if ($('s2date')) $('s2date').focus({ preventScroll: true }); return; }
 if (e.target && e.target.id === 'satDate' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) && e.target.value <= YESTERDAY) {

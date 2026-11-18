@@ -56,7 +56,7 @@ async function buoy(svc, name, from, to) {
     o.s += a.Metric_Value; o.n++; if (a.Metric_Value > o.max) o.max = a.Metric_Value;
   });
   var metrics = {};
-  Object.keys(by).forEach(function (k) { metrics[k] = Object.keys(by[k]).sort().map(function (d) { var o = by[k][d]; return [d.slice(5), +(o.s / o.n).toFixed(2), +o.max.toFixed(2)]; }); });
+  Object.keys(by).forEach(function (k) { metrics[k] = Object.keys(by[k]).sort().map(function (d) { var o = by[k][d]; return [d, +(o.s / o.n).toFixed(2), +o.max.toFixed(2)]; }); });
   return { name: name, rows: rows.length, error: rows.length ? undefined : err, metrics: metrics };
 }
 module.exports = async function (req, res) {
