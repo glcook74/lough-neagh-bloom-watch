@@ -25,6 +25,7 @@
 <a class="tab" id="tabAreas" href="#areas">Key areas</a>
 <a class="tab" id="tabSatellite" href="#satellite">Satellite</a>
 <a class="tab" id="tabInvestigate" href="#investigate">Investigate</a>
+<a class="tab" id="tabForecast" href="#forecast">Forecast</a>
 </nav>
 <div id="viewMap">
 <div class="stage">
@@ -73,6 +74,9 @@
 <section id="viewInvestigate" class="analysis" hidden>
 <div id="invBody"></div>
 </section>
+<section id="viewForecast" class="analysis" hidden>
+<div id="fcBody"></div>
+</section>
 <footer>
 <h3>Turning this into a real forecast</h3>
 <ul>
@@ -98,6 +102,7 @@
 <li>Satellite by date and algae from space: Sentinel-2 images from the Copernicus Data Space Ecosystem, processed with Sentinel Hub. Contains modified Copernicus Sentinel data. The algae index is the Normalised Difference Chlorophyll Index.</li>
 <li>Satellite tab: the same Sentinel-2 images, summarised with the Sentinel Hub Statistical API for nine boxes over the lough at about 115 m detail, every pass since 2023 with under 70% cloud.</li>
 <li>Investigate tab: weather and basin rainfall from the Open-Meteo ERA5 archive (open-meteo.com, CC BY 4.0), buoy readings from DAERA open data, and the Sentinel-2 algae index. Basin rainfall is taken at one point near the middle of each basin.</li>
+<li>Forecast tab: a weather-only score built from the Open-Meteo ERA5 archive, tuned and tested against the Sentinel-2 algae index. It is a research check, not an operational forecast.</li>
 <li>Sharp aerial view: Esri World Imagery (Esri, Maxar, Earthstar Geographics and the GIS user community). Check Esri's terms before any commercial use.</li>
 <li>Satellite 2024 view: Sentinel-2 cloudless 2024 (s2maps.eu) by EOX IT Services GmbH, contains modified Copernicus Sentinel data 2024, licensed CC BY-NC-SA 4.0 for non-commercial use.</li>
 <li>Daily photos: NASA Terra MODIS, through NASA EOSDIS GIBS.</li>

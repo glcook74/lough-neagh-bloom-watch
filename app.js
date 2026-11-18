@@ -1116,13 +1116,77 @@ else if (!SAT.zones) h += '<p class="small" role="status">Loading the satellite 
 else h += invHtml(INV.date); }
 el.innerHTML = h;
 }
+/* ---------- forecast: hindcast check and outlook for next season ---------- */
+var FC = null, FCSTATE = '';
+function loadFc() {
+if (FCSTATE || !window.fetch) return; FCSTATE = 'loading';
+fetch('/api/outlook').then(function (res) { return res.json(); }).then(function (j) { if (j && j.ok) { FC = j; FCSTATE = 'ok'; } else FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); }).catch(function () { FCSTATE = 'fail'; if (location.hash === '#forecast') renderFc(); });
+}
+function dm(date) { return date ? shortDate(date.length === 5 ? '2000-' + date : date) : 'none'; }
+function strength(r) { return r == null ? 'could not be worked out' : r >= 0.7 ? 'strong' : r >= 0.5 ? 'moderate' : r >= 0.3 ? 'weak' : r > 0.1 ? 'very weak' : 'no better than chance'; }
+function fcYearChart(y, alarm) {
+var W = 560, H = 150, L = 34, Rr = 40, T = 10, B = 24, start = Date.UTC(y.year, 2, 1), end = Date.UTC(y.year, 10, 15), span = end - start;
+var X = function (md) { return L + (W - L - Rr) * (Date.parse(y.year + '-' + md + 'T00:00:00Z') - start) / span; }, top = Math.max(0.5, alarm * 1.6), Ys = function (v) { return T + (H - T - B) * (1 - Math.min(top, v) / top); }, Yi = function (v) { return T + (H - T - B) * (1 - (Math.max(-0.1, Math.min(0.5, v)) + 0.1) / 0.6); };
+var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + y.year + ': weather score and satellite index"><g font-family="var(--body)" font-size="12" fill="var(--muted)">';
+['03', '04', '05', '06', '07', '08', '09', '10', '11'].forEach(function (m) { var x = X(m + '-01'); s += '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--line)"/><text x="' + (x + 4).toFixed(1) + '" y="' + (H - 8) + '">' + MONN[+m - 1] + '</text>'; });
+s += '<text x="' + (L - 4) + '" y="' + (Ys(0) + 4) + '" text-anchor="end">0</text><text x="' + (W - Rr + 4) + '" y="' + (Yi(0.1) + 4).toFixed(1) + '">0.1</text><text x="' + (W - Rr + 4) + '" y="' + (Yi(0.4) + 4).toFixed(1) + '">0.4</text></g>';
+var pts = y.weekly.filter(function (w) { return w[0] >= '03-01' && w[0] <= '11-15'; });
+if (pts.length > 1) s += '<polygon fill="var(--accent)" opacity="0.25" points="' + X(pts[0][0]).toFixed(1) + ',' + Ys(0) + ' ' + pts.map(function (w) { return X(w[0]).toFixed(1) + ',' + Ys(w[1]).toFixed(1); }).join(' ') + ' ' + X(pts[pts.length - 1][0]).toFixed(1) + ',' + Ys(0) + '"/><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="' + pts.map(function (w) { return X(w[0]).toFixed(1) + ',' + Ys(w[1]).toFixed(1); }).join(' ') + '"/>';
+s += '<line x1="' + L + '" x2="' + (W - Rr) + '" y1="' + Ys(alarm).toFixed(1) + '" y2="' + Ys(alarm).toFixed(1) + '" stroke="var(--accent)" stroke-dasharray="5 4"/>';
+(y.passes || []).forEach(function (p) { if (p[0] < '03-01' || p[0] > '11-15') return; s += '<circle cx="' + X(p[0]).toFixed(1) + '" cy="' + Yi(p[1]).toFixed(1) + '" r="' + (p[2] >= 0.5 ? 5 : 3.5) + '" fill="' + rampColour(p[1]).bg + '" stroke="var(--ink)" stroke-width="1"><title>' + dm(p[0]) + ' ' + y.year + ': satellite ' + p[1].toFixed(2) + '</title></circle>'; });
+return s + '</svg>';
+}
+function fcHtml() {
+var Y = FC.years, sk = FC.skill, next = FC.years[FC.years.length - 1].year + 1, done = Y.filter(function (y) { return y.summer && y.satellite.seasonUsable; });
+var h = '<h2>Outlook for ' + next + '</h2><p class="lede">What four seasons of satellite and weather records can and cannot say about next year, with a test of how far to trust it.</p>' +
+'<p class="notice"><strong>A range, not a prediction.</strong> How bad a season gets depends mostly on the summer\'s weather, which nobody can forecast this far ahead. This page shows the likely window and what different summers have produced before.</p>';
+/* outlook */
+var firsts = done.map(function (y) { return y.satellite.first; }).filter(Boolean).map(function (d) { return d.slice(5); }).sort(), lasts = done.map(function (y) { return y.satellite.last; }).filter(Boolean).map(function (d) { return d.slice(5); }).sort(), peaks = done.map(function (y) { return y.satellite.peak ? y.satellite.peak.date.slice(5) : null; }).filter(Boolean).sort();
+var shares = done.map(function (y) { return y.satellite.highDays / y.satellite.seasonUsable; }).sort(function (a, b) { return a - b; });
+h += '<h3>What to expect</h3><dl class="invfinds">' +
+'<div><dt>Will there be blooms?</dt><dd><strong>Very likely.</strong> The satellite index went above 0.1 in every one of the ' + done.length + ' years on record. The phosphorus already in the lough does not clear in a year.</dd></div>' +
+'<div><dt>When</dt><dd>First signs between <strong>' + dm(firsts[0]) + ' and ' + dm(firsts[firsts.length - 1]) + '</strong>. Peaks have fallen between <strong>' + dm(peaks[0]) + ' and ' + dm(peaks[peaks.length - 1]) + '</strong>. The last high readings came between ' + dm(lasts[0]) + ' and ' + dm(lasts[lasts.length - 1]) + '.</dd></div>' +
+'<div><dt>How severe</dt><dd>In past seasons, between <strong>' + Math.round(shares[0] * 100) + '% and ' + Math.round(shares[shares.length - 1] * 100) + '%</strong> of the clear June to October satellite days showed more than half the water above 0.1. Where ' + next + ' lands in that range depends on the summer.</dd></div>' +
+'<div><dt>What decides it</dt><dd>Runs of warm, sunny, light-wind days build the algae up. Calm days bring it to the surface. Wind mixes it away. Heavy rain washes fresh phosphorus in from the rivers.</dd></div></dl>';
+/* scenarios */
+var sc = done.slice().sort(function (a, b) { return a.summer.warmCalmDays - b.summer.warmCalmDays; });
+h += '<h3>If ' + next + ' has a summer like...</h3><p class="small">Each past summer is one possible ' + next + '. They are ordered from the fewest warm, calm, sunny days to the most.</p><div class="tablewrap"><table class="sat inv"><thead><tr><th class="lh" scope="col">A summer like</th><th scope="col">Average air</th><th scope="col">Warm, calm, sunny days</th><th scope="col">Calm days</th><th scope="col">Rain</th><th scope="col">Satellite: high days</th><th scope="col">Satellite: season average</th><th scope="col">Peak</th></tr></thead><tbody>' + sc.map(function (y, i) {
+var col = rampColour(y.satellite.seasonMean == null ? 0 : y.satellite.seasonMean);
+return '<tr><th scope="row">' + y.year + (y.complete ? '' : ' (so far)') + (i === 0 ? ' · fewest' : i === sc.length - 1 ? ' · most' : '') + '</th><td>' + y.summer.meanTemp.toFixed(1) + '°C</td><td>' + y.summer.warmCalmDays + '</td><td>' + y.summer.calmDays + '</td><td>' + y.summer.rain + ' mm</td><td>' + y.satellite.highDays + ' of ' + y.satellite.seasonUsable + '</td><td><span class="cell" style="background:' + col.bg + ';color:' + col.fg + '">' + (y.satellite.seasonMean == null ? '' : y.satellite.seasonMean.toFixed(2)) + '</span></td><td>' + (y.satellite.peak ? dm(y.satellite.peak.date) + ' (' + y.satellite.peak.m.toFixed(2) + ')' : '') + '</td></tr>';
+}).join('') + '</tbody></table></div><p class="small">June to October figures. Cloud hides many days, so a year with few clear days can look milder or worse than it was.</p>';
+/* hindcast */
+var te = sk.test, tr = sk.train, cal = sk.calendarOnly.test, beats = te.rhoSeason != null && cal != null && te.rhoSeason > cal + 0.1;
+h += '<h3>How far can a weather-based forecast be trusted?</h3><p>To find out, a simple score was built from temperature, sunshine and wind alone. It was tuned on ' + tr.years[0] + ' to ' + tr.years[tr.years.length - 1] + ', then run on <strong>' + te.years[0] + ', a year it had never seen</strong>, and compared with what the satellite recorded.</p><dl class="invfinds">' +
+'<div><dt>Ranking the days in ' + te.years[0] + '</dt><dd>Across ' + te.seasonPasses + ' clear June to October days, the match between the score and the satellite was <strong>' + strength(te.rhoSeason) + '</strong> (' + (te.rhoSeason == null ? 'n/a' : te.rhoSeason.toFixed(2)) + ', where 0 is chance and 1 is perfect).</dd></div>' +
+'<div><dt>Against the calendar</dt><dd>Simply knowing the month scores ' + (cal == null ? 'n/a' : cal.toFixed(2)) + ' on the same days. ' + (beats ? 'The weather score <strong>adds real information</strong> beyond the time of year.' : 'So the weather score is <strong>not yet clearly better than the calendar</strong>.') + '</dd></div>' +
+'<div><dt>Catching the high days</dt><dd>In ' + te.years[0] + ' it flagged <strong>' + te.caught + ' of the ' + te.highDays + ' high days</strong> the satellite saw, and raised a false alarm on ' + te.falseAlarms + ' of the ' + te.lowDays + ' other days. In the years it was tuned on: ' + tr.caught + ' of ' + tr.highDays + ' caught, ' + tr.falseAlarms + ' false alarms in ' + tr.lowDays + '.</dd></div>' +
+'<div><dt>What that means</dt><dd>' + (beats && te.highDays && te.caught / te.highDays >= 0.6 ? 'Good enough to use as an early warning a few days ahead, when paired with the live weather forecast. Not good enough to promise how a whole season will go.' : 'Treat the score as a rough guide only. It needs more years, the buoy readings and river data before it can be relied on.') + '</dd></div></dl>';
+h += '<h3>The score against the satellite, year by year</h3><p class="small">Shaded line: the weather score each week, with its alarm level dashed (left scale). Dots: the satellite algae index on each clear day (right scale). Larger dots are days when more than half the water was above 0.1.</p><div class="charts">' + Y.map(function (y) { return '<div class="chart"><div class="charttitle">' + y.year + (te.years[0] === y.year ? ' · not used for tuning' : '') + '</div>' + fcYearChart(y, FC.alarmLevel) + '</div>'; }).join('') + '</div>';
+/* tracker */
+var n = FC.now;
+h += '<h3>Early warning for ' + next + '</h3><p>The same score keeps running on each new day of weather, so this section becomes a live tracker once spring arrives.</p><dl class="invfinds">' +
+(n ? '<div><dt>Where it stands</dt><dd>On ' + longDate(n.date) + ' the score was <strong>' + n.score.toFixed(2) + '</strong> against an alarm level of ' + FC.alarmLevel.toFixed(2) + ', with the water estimated at ' + n.water.toFixed(1) + '°C. ' + (n.score >= FC.alarmLevel ? 'That is above the alarm level.' : n.water < 12 ? 'The water is too cold for blooms, as expected at this time of year.' : 'That is below the alarm level.') + '</dd></div>' : '') +
+'<div><dt>Watch for, in order</dt><dd><ol class="fcsteps"><li>Water passing <strong>18°C</strong>. Check the buoys on the Map tab.</li><li>A run of <strong>three or more</strong> warm, sunny days with wind under 9 mph.</li><li>The score crossing its alarm level.</li><li>Heavy rain over the river basins, followed by <strong>two calm days</strong>. That is the pattern before 24 August 2026.</li><li>The five-day outlook on the Map tab turning amber or red for a shore.</li></ol></dd></div></dl>';
+h += '<h3>What this cannot do</h3><ul class="notes">' +
+'<li>Four seasons is a very short record. One unusual year would change these ranges.</li>' +
+'<li>The score uses weather only. It knows nothing about river phosphorus, river flow, phosphorus stored in the lough bed, or zebra mussels.</li>' +
+'<li>It is tested against the satellite index, which is itself not checked against water samples. Cloud hides most days.</li>' +
+'<li>The score was tuned to rank days in order, not to give amounts. Its number has no unit.</li>' +
+'<li>Weather records come from a weather model for the centre of the lough and run about six days behind.</li>' +
+'<li>Do not use this to decide whether water is safe. Follow DAERA and council notices.</li></ul>';
+return h;
+}
+function renderFc() {
+var el = $('fcBody'); if (!el) return; loadFc();
+el.innerHTML = FC ? fcHtml() : '<p class="small" role="status">' + (FCSTATE === 'fail' ? 'The outlook could not be worked out right now. Please try again in a few minutes.' : 'Running the score over every year since 2023 and checking it against the satellite. This can take up to a minute the first time.') + '</p>';
+}
 function showView() {
-var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : location.hash === '#investigate' ? 'Investigate' : 'Map';
-['Map', 'Analysis', 'Areas', 'Satellite', 'Investigate'].forEach(function (n) {
+var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : location.hash === '#investigate' ? 'Investigate' : location.hash === '#forecast' ? 'Forecast' : 'Map';
+['Map', 'Analysis', 'Areas', 'Satellite', 'Investigate', 'Forecast'].forEach(function (n) {
 $('view' + n).hidden = n !== v;
 if (n === v) $('tab' + n).setAttribute('aria-current', 'page'); else $('tab' + n).removeAttribute('aria-current');
 });
-if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (v === 'Investigate') renderInv(); else if (MAP) MAP.invalidateSize();
+if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (v === 'Investigate') renderInv(); else if (v === 'Forecast') renderFc(); else if (MAP) MAP.invalidateSize();
 }
 /* ---------- Sentinel-2 pictures for a chosen day ---------- */
 var S2BOX = [[54.42, -6.78], [54.82, -6.06]], S2DAYS = {}, S2IMG = {}, S2STATE = { 'true': '', algae: '' };

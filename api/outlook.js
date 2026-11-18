@@ -76,9 +76,11 @@ module.exports = async function (req, res) {
     var skill = { train: Object.assign({ years: trainYears }, evaluate(byAll, passesOf(trainYears), thr)), test: Object.assign({ years: [testYear] }, evaluate(byAll, passesOf([testYear]), thr)),
       calendarOnly: { test: evaluate(clim, passesOf([testYear]), 1e9).rhoSeason, train: evaluate(clim, passesOf(trainYears), 1e9).rhoSeason } };
     ['train', 'test'].forEach(function (k) { skill[k].rho = r3(skill[k].rho); skill[k].rhoSeason = r3(skill[k].rhoSeason); }); skill.calendarOnly.test = r3(skill.calendarOnly.test); skill.calendarOnly.train = r3(skill.calendarOnly.train);
+    var nowState = null;
     var perYear = years.map(function (yy) {
       var days = wx[yy], series = run(days, P), summer = days.filter(function (d) { return inSeason(d.date); }), ps = passesOf([yy]), sea = ps.filter(function (s) { return inSeason(s.date); });
       var above = ps.filter(function (s) { return s.m >= 0.1; }), pk = ps.slice().sort(function (a, b) { return b.m - a.m; })[0];
+      if (yy === thisYear && series.length) { var lastS = series[series.length - 1], wk7 = series.slice(-7); nowState = { date: lastS.date, score: r3(lastS.score), water: +lastS.tw.toFixed(1), weekAgo: r3(wk7[0].score) }; }
       var alarmDays = series.filter(function (d) { return d.score >= thr; }), mpk = series.slice().sort(function (a, b) { return b.score - a.score; })[0];
       var weekly = []; if (!req.query.summary) for (var i = 0; i + 6 < series.length; i += 7) { var wk = series.slice(i, i + 7); weekly.push([wk[0].date.slice(5), +mean(wk.map(function (d) { return d.score; })).toFixed(3), +mean(wk.map(function (d) { return d.tw; })).toFixed(1)]); }
       return { year: yy, complete: days.length >= 300 || (days.length && days[days.length - 1].date >= yy + '-10-31'),
@@ -88,7 +90,7 @@ module.exports = async function (req, res) {
         weekly: weekly, passes: req.query.summary ? undefined : ps.map(function (s) { return [s.date.slice(5), +s.m.toFixed(3), +s.h.toFixed(2)]; }) };
     });
     res.setHeader('Cache-Control', 'public, s-maxage=43200, stale-while-revalidate=604800');
-    res.status(200).json({ ok: true, madeOn: iso(now), weatherTo: lastDay, params: P, trainRho: r3(best.rho), alarmLevel: r3(thr), satelliteHalvesMissing: sat.missing, skill: skill, years: perYear });
+    res.status(200).json({ ok: true, madeOn: iso(now), weatherTo: lastDay, params: P, trainRho: r3(best.rho), alarmLevel: r3(thr), satelliteHalvesMissing: sat.missing, now: nowState, skill: skill, years: perYear });
   } catch (e) {
     console.warn('Outlook failed:', String(e && e.message));
     res.setHeader('Cache-Control', 'no-store');

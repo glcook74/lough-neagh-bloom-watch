@@ -257,3 +257,8 @@ table.sat.inv td { font-size: 0.8rem; padding: 6px 8px; white-space: nowrap; }
 table.sat.inv td.lh, table.sat.inv th.lh { text-align: left; }
 table.sat.inv th[scope="row"] { white-space: nowrap; min-width: 0; }
 table.sat.inv thead th { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+/* forecast */
+#fcBody { display: flex; flex-direction: column; gap: 14px; }
+#fcBody h3 { font-family: var(--display); font-size: 1.1rem; margin-top: 10px; }
+#fcBody p { max-width: 70ch; }
+.fcsteps { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; }
