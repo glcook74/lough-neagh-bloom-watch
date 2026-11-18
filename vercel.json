@@ -1,5 +1,10 @@
 {
   "functions": {
-    "api/satstats.js": { "maxDuration": 60 }
+    "api/satstats.js": {
+      "maxDuration": 60
+    },
+    "api/outlook.js": {
+      "maxDuration": 60
+    }
   }
 }
