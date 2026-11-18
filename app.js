@@ -1252,13 +1252,106 @@ if (ready) { FC = fcBuild(); }
 if (ready && FC && FC.years.some(function (y) { return y.satellite.seasonUsable; })) el.innerHTML = (SAT.failed ? '<p class="notice"><strong>Some satellite data is missing.</strong> ' + SAT.failed + ' of the ' + SAT.total + ' half-years could not be loaded, so the figures below are incomplete. Refresh the page in a few minutes.</p>' : '') + fcHtml();
 else el.innerHTML = '<p class="small" role="status">' + (FCSTATE === 'fail' || (ready && !FC) || (SAT.total && SAT.done === SAT.total && !SAT.zones) ? 'The outlook could not be worked out right now, because the weather or satellite records did not load. Please try again in a few minutes.' : 'Running the score over every year since 2023 and checking it against the satellite. This can take up to a minute the first time. Loaded ' + SAT.done + ' of ' + (SAT.total || 8) + ' satellite half-years.') + '</p>';
 }
+/* ---------- rivers: one river's catchment in detail ---------- */
+var RIV = { list: null, listState: '', id: null, data: {} }, RIVMAP = null, rivLayer = null;
+function loadRivers() {
+if (RIV.listState || !window.fetch) return; RIV.listState = 'loading';
+fetch('/api/river?list=1').then(function (res) { return res.json(); }).then(function (j) { if (j && j.ok) { RIV.list = j.rivers; RIV.listState = 'ok'; if (!RIV.id) { var first = j.rivers.filter(function (x) { return x.max != null; })[0] || j.rivers[0]; if (first) RIV.id = first.id; } } else RIV.listState = 'fail'; if (location.hash === '#rivers') renderRiv(); }).catch(function () { RIV.listState = 'fail'; if (location.hash === '#rivers') renderRiv(); });
+}
+function loadRiver(id) {
+if (RIV.data[id] || !window.fetch) return; RIV.data[id] = 'loading';
+fetch('/api/river?id=' + id).then(function (res) { return res.json(); }).then(function (j) { RIV.data[id] = j && j.ok ? j : 'fail'; if (location.hash === '#rivers' && RIV.id === id) renderRiv(); }).catch(function () { RIV.data[id] = 'fail'; if (location.hash === '#rivers' && RIV.id === id) renderRiv(); });
+}
+function rivGo(id) { RIV.id = id; location.hash = '#rivers'; renderRiv(); window.scrollTo(0, 0); }
+function rivMapDraw(d) {
+if (!window.L) { $('rivMap').innerHTML = '<p class="mapfail">The map could not load. The figures below still work.</p>'; return; }
+if (!RIVMAP) { RIVMAP = L.map('rivMap', { zoomSnap: 0.25, zoomDelta: 0.5, minZoom: 8, maxZoom: 17, scrollWheelZoom: false, dragging: !L.Browser.mobile }); RIVMAP.attributionControl.setPrefix(false);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(RIVMAP); }
+RIVMAP.invalidateSize();
+if (rivLayer && rivLayer.rivId === d.id) return;
+if (rivLayer) RIVMAP.removeLayer(rivLayer);
+rivLayer = L.layerGroup(); rivLayer.rivId = d.id;
+var outline = L.polygon(d.rings.map(function (ring) { return ring.map(function (p) { return [p[1], p[0]]; }); }), { color: '#10262e', weight: 2.5, fillColor: '#0d6a62', fillOpacity: 0.08, interactive: false }).addTo(rivLayer);
+(d.overflows || []).forEach(function (o) { if (o.lat) L.marker([o.lat, o.lon], { icon: L.divIcon({ html: '<span class="hp s rv">O</span>', className: 'mk', iconSize: [22, 20], iconAnchor: [11, 10] }), title: o.name, zIndexOffset: 100 }).bindPopup('<strong>' + esc(o.name) + '</strong><br>NI Water storm overflow or pumping station' + (o.vol ? '<br>Predicted to spill ' + nf(o.vol) + ' cubic metres a year' : '<br>No spill prediction yet') + (o.cls ? '<br>NI Water class: ' + esc(o.cls) : '')).addTo(rivLayer); });
+(d.works || []).concat(d.worksNearby || []).forEach(function (w) { if (w.lat) L.marker([w.lat, w.lon], { icon: L.divIcon({ html: '<span class="hp i rv">W</span>', className: 'mk', iconSize: [22, 20], iconAnchor: [11, 10] }), title: w.name, zIndexOffset: 200 }).bindPopup('<strong>' + esc(w.name) + '</strong><br>NI Water sewage treatment works' + (w.into ? '<br>Discharges to: ' + esc(w.into) : '')).addTo(rivLayer); });
+(d.sites || []).forEach(function (s, k) { if (s.lat) L.marker([s.lat, s.lon], { icon: L.divIcon({ html: '<span class="hp p rv">T' + (k + 1) + '</span>', className: 'mk', iconSize: [26, 20], iconAnchor: [13, 10] }), title: siteName(s.name), zIndexOffset: 300 }).bindPopup('<strong>T' + (k + 1) + ' · ' + esc(siteName(s.name)) + '</strong><br>Test site ' + esc(s.code) + '<br>2020 to 2024 average: ' + s.mean.toFixed(3) + ' mg/l of dissolved phosphorus').addTo(rivLayer); });
+rivLayer.addTo(RIVMAP); RIVMAP.fitBounds(outline.getBounds().pad(0.08));
+}
+function rivBars(vals, labels, colour, title, mark) {
+var W = 300, H = 130, L = 34, B = 20, T = 8, top = Math.max.apply(null, vals.filter(function (v) { return v != null; }).concat([0.05])) * 1.15, bw = (W - L - 6) / vals.length;
+var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + title + '"><g font-family="var(--body)" font-size="11" fill="var(--muted)"><line x1="' + L + '" x2="' + (W - 6) + '" y1="' + (H - B) + '" y2="' + (H - B) + '" stroke="var(--line)"/><text x="' + (L - 4) + '" y="' + (T + 8) + '" text-anchor="end">' + top.toFixed(top < 1 ? 2 : 1) + '</text><text x="' + (L - 4) + '" y="' + (H - B) + '" text-anchor="end">0</text>';
+vals.forEach(function (v, i) { var x = L + i * bw; if (v != null) { var hh = (H - B - T) * v / top; s += '<rect x="' + (x + bw * 0.15).toFixed(1) + '" y="' + (H - B - hh).toFixed(1) + '" width="' + (bw * 0.7).toFixed(1) + '" height="' + hh.toFixed(1) + '" fill="' + (mark && mark(i) ? colour[1] : colour[0]) + '"><title>' + labels[i] + ': ' + v.toFixed(3) + ' mg/l</title></rect>'; } if (vals.length <= 12 || i % 2 === 0) s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + (vals.length <= 12 ? labels[i].charAt(0) : labels[i].slice(2)) + '</text>'; });
+return s + '</g></svg>';
+}
+function rivPattern(s) { if (s.summer == null || s.winter == null || !s.winter) return null; var ratio = s.summer / s.winter; return { ratio: ratio, kind: ratio >= 1.4 ? 'summer' : ratio <= 0.75 ? 'winter' : 'even' }; }
+function rivHtml(d) {
+var S = d.sites || [], top = S[0], pat = top ? rivPattern(top) : null, h = '';
+var meta = (RIV.list || []).filter(function (x) { return x.id === d.id; })[0];
+h += '<dl class="facts"><div><dt>Catchment area</dt><dd>' + d.km2.toFixed(1) + ' km²</dd></div><div><dt>Overall status, 2018</dt><dd>' + wfd(d.status)[0] + '</dd></div><div><dt>Phosphorus test sites</dt><dd>' + S.length + '</dd></div><div><dt>Main basin</dt><dd>' + (meta ? basinLabel(meta.basin) : '') + '</dd></div></dl>';
+/* the tests */
+h += '<h3>What the river tests show</h3>';
+if (!S.length) h += '<p>DAERA has no phosphorus test site with enough recent readings inside this river\'s catchment, so there is no measured figure here. The sections below still show what could be affecting it.</p>';
+S.forEach(function (s, k) {
+var p = rivPattern(s), ch = s.prev == null ? '' : s.mean - s.prev > 0.005 ? ', up from ' + s.prev.toFixed(3) + ' in 2015 to 2019' : s.prev - s.mean > 0.005 ? ', down from ' + s.prev.toFixed(3) + ' in 2015 to 2019' : ', about the same as 2015 to 2019';
+var am = d.other && d.other.ammonia && d.other.ammonia.by[s.code], bod = d.other && d.other.bod && d.other.bod.by[s.code];
+h += '<div class="rivsite"><p><strong>T' + (k + 1) + ' · ' + esc(siteName(s.name)) + '</strong> (site ' + esc(s.code) + ')</p><p>Dissolved phosphorus averaged <strong>' + s.mean.toFixed(3) + ' mg/l</strong> over 2020 to 2024 from ' + s.n + ' tests' + ch + '. The highest single reading was ' + s.max.toFixed(2) + ' mg/l.' + (am ? ' Ammonia averaged ' + am.mean.toFixed(3) + ' mg/l' + (bod ? ' and oxygen demand ' + bod.mean.toFixed(1) + ' mg/l' : '') + '.' : '') + '</p>' +
+'<div class="charts"><div class="chart"><div class="charttitle">Average by year, mg/l</div>' + rivBars(s.years, ['2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024'], ['#5a2c86', '#5a2c86'], 'Phosphorus by year') + '</div><div class="chart"><div class="charttitle">Average by month, 2015 to 2024, mg/l</div>' + rivBars(s.months, MONN, ['#8a6fb0', '#c97f00'], 'Phosphorus by month', function (i) { return i >= 3 && i <= 8; }) + '<div class="legend"><span class="key"><span class="sw" style="background:#c97f00"></span>April to September</span><span class="key"><span class="sw" style="background:#8a6fb0"></span>October to March</span></div></div></div>' +
+(p ? '<p class="small">Summer half-year ' + s.summer.toFixed(3) + ' mg/l, winter half-year ' + s.winter.toFixed(3) + ' mg/l: ' + (p.kind === 'summer' ? '<strong>' + p.ratio.toFixed(1) + ' times higher in summer</strong>.' : p.kind === 'winter' ? '<strong>' + (1 / p.ratio).toFixed(1) + ' times higher in winter</strong>.' : 'much the same all year.') + '</p>' : '') + '</div>';
+});
+/* reading the pattern */
+var W = d.works || [], O = d.overflows || [], I = d.incidents, F = d.fieldRisk, rows = [];
+if (pat) rows.push(['The seasonal pattern', pat.kind === 'summer' ? 'Phosphorus here is <strong>much higher in summer than winter</strong>. That is the usual mark of a <strong>steady source that runs all year</strong>, such as a sewage works, septic tanks or a yard drain. In summer the river is low, so the same amount is far less diluted. Run-off from fields usually does the opposite and peaks in wet weather.' : pat.kind === 'winter' ? 'Phosphorus here is <strong>higher in the wet half of the year</strong>. That is the usual mark of <strong>run-off from land</strong>: rain carrying soil, slurry and fertiliser off fields and yards, and storm overflows spilling. A steady pipe discharge usually shows the opposite.' : 'Phosphorus here is <strong>much the same in summer and winter</strong>, which suggests a mix of steady sources and wet-weather run-off, with neither clearly in charge.']);
+rows.push(['Sewage works', W.length ? W.map(function (w) { return '<strong>' + esc(w.name) + '</strong>'; }).join(' and ') + (W.length === 1 ? ' discharges' : ' discharge') + ' treated sewage into this river, according to NI Water\'s records.' + ((d.worksNearby || []).length ? ' ' + d.worksNearby.length + ' other works sit inside the catchment but discharge to a different river.' : '') : 'NI Water records no treatment works discharging to this river.' + ((d.worksNearby || []).length ? ' ' + d.worksNearby.map(function (w) { return esc(w.name); }).join(', ') + ' sits inside the catchment but is recorded as discharging elsewhere.' : '')]);
+var spill = O.filter(function (o) { return o.vol > 0; }), tbd = O.filter(function (o) { return /determined/i.test(o.cls); }), uns = O.filter(function (o) { return /unsat/i.test(o.cls); });
+rows.push(['Storm overflows', O.length ? '<strong>' + O.length + '</strong> NI Water overflows and pumping stations in the catchment. ' + (spill.length ? 'Predicted spills total ' + nf(spill.reduce(function (s, o) { return s + o.vol; }, 0)) + ' cubic metres a year, the largest at ' + esc(spill[0].name) + '. ' : '') + (uns.length ? uns.length + ' classed unsatisfactory. ' : '') + (tbd.length ? '<strong>' + tbd.length + ' still to be assessed</strong>, so nobody yet knows how much they spill.' : '') : 'None recorded in the catchment.']);
+if (I) rows.push(['Pollution incidents, 2011 to 2024', I.total ? '<strong>' + I.total + '</strong> recorded in the squares touching the catchment: ' + I.farm + ' farming, ' + I.sewage + ' sewage or households, ' + I.industry + ' industry, ' + Math.max(0, I.total - I.farm - I.sewage - I.industry) + ' other or unknown. ' + I.years.slice(-5).reduce(function (a, b) { return a + b; }, 0) + ' of them since 2020. Squares on the edge are counted whole, so this slightly overstates it.' : 'None recorded.']);
+if (F) { var tot = F.low + F.medium + F.high; rows.push(['Farmland run-off risk', tot ? 'DAERA has scored ' + nf(tot) + ' hectares here for run-off risk: <strong>' + nf(F.high) + ' ha high</strong>, ' + nf(F.medium) + ' ha medium, ' + nf(F.low) + ' ha low.' + (d.fieldUse && d.fieldUse.length ? ' Mostly ' + d.fieldUse.slice(0, 2).map(function (u) { return String(u.use).toLowerCase() + ' (' + nf(u.ha) + ' ha)'; }).join(' and ') + '.' : '') + ' Only part of the farmland is scored.' : 'No fields in this catchment have a DAERA run-off risk score.']); }
+if (d.farmArea) { var fa = d.farmArea, ha = fa.farmedHa || 1, est = d.km2 * 100 * 0.75; rows.push(['Livestock', 'The wider ' + esc(tidyName(fa.name)) + ' electoral area averages ' + (fa.cattle / ha).toFixed(1) + ' cattle, ' + (fa.pigs / ha).toFixed(1) + ' pigs and ' + Math.round(fa.poultry / ha) + ' poultry per farmed hectare (2019 census). If this catchment is typical of it, that would be very roughly <strong>' + nf(Math.round(fa.cattle / ha * est / 100) * 100) + ' cattle</strong> and ' + nf(Math.round(fa.farms / ha * est)) + ' farms. The census does not say where farms are, so this is an estimate.' + (d.poultryHouses != null ? ' DAERA\'s test layer maps ' + d.poultryHouses + ' poultry ' + (d.poultryHouses === 1 ? 'house' : 'houses') + ' inside the catchment.' : '')]); }
+h += '<h3>What could be feeding it</h3><dl class="invfinds">' + rows.map(function (x) { return '<div><dt>' + x[0] + '</dt><dd>' + x[1] + '</dd></div>'; }).join('') + '</dl>';
+/* what could be done */
+var act = [];
+if (W.length && (!pat || pat.kind !== 'winter')) act.push(['Ask about phosphorus removal at ' + W.map(function (w) { return esc(w.name); }).join(' and '), 'Find out from NI Water whether the works has a phosphorus limit in its consent, what it achieves, and whether an upgrade is planned. Small works often have no phosphorus removal at all.', 'NI Water, with NIEA as regulator']);
+if (S.length && W.length) act.push(['Test above and below the works', 'One extra sampling point upstream of the discharge would show in a few months how much of the phosphorus the works adds. This is the cheapest way to settle the question.', 'NIEA, or a rivers trust or citizen science group']);
+if (tbd.length) act.push(['Get the ' + tbd.length + ' unassessed overflows measured', 'Ask NI Water when these will be assessed and whether spill monitors can be fitted, so their part is known instead of guessed.', 'NI Water']);
+if (uns.length) act.push(['Fix the overflows already classed unsatisfactory', uns.slice(0, 3).map(function (o) { return esc(o.name); }).join(', ') + (uns.length > 3 ? ' and others' : '') + '. These are already known to spill too often.', 'NI Water']);
+if (F && F.high >= 5) act.push(['Target the ' + nf(F.high) + ' hectares of high-risk fields', 'Buffer strips, fenced watercourses, soil testing and careful slurry timing on these fields give the most benefit for the least land. Support is available through DAERA schemes and the Soil Nutrient Health Scheme.', 'Farmers, with CAFRE and DAERA advisers']);
+if (I && I.farm >= 5) act.push(['Look at what the ' + I.farm + ' farm incidents had in common', 'Repeated incidents usually trace to a few fixable things: slurry storage that is too small, yard drains, or silage effluent. A pattern would show where advice or grant aid would help most.', 'NIEA and CAFRE advisers']);
+if (I && I.sewage >= 5) act.push(['Check for misconnections and failing septic tanks', I.sewage + ' incidents were recorded as sewage or household. Outside the sewered area, septic tanks near streams are a common steady source.', 'NI Water, councils and householders']);
+if (pat && pat.kind === 'summer' && !W.length) act.push(['Look for a steady source', 'The summer peak points to something discharging all year, but no treatment works is recorded here. Septic tanks, yard drains and private discharges are the places to look.', 'NIEA catchment officers']);
+if (!act.length) act.push(['Start with better measurement', 'There is not enough here to point at a cause. A season of extra sampling would show whether this river needs attention.', 'NIEA or a local group']);
+h += '<h3>What could be looked at or fixed</h3><p class="small">Suggested from the patterns above, as questions to ask and things to check. The aim is to find causes that can be put right, not to blame anyone.</p><ol class="rivacts">' + act.map(function (a) { return '<li><strong>' + a[0] + '.</strong> ' + a[1] + ' <span class="who">Who could act: ' + a[2] + '.</span></li>'; }).join('') + '</ol>';
+h += '<h3>What this page cannot tell you</h3><ul class="notes">' +
+'<li>The catchment is the land DAERA assigns to this river water body. It does not include rivers upstream that flow into it, and it does not know which parts lie upstream of each test site.</li>' +
+'<li>How much phosphorus each source adds is not measured anywhere in this data. The seasonal pattern is a well-used pointer, not proof.</li>' +
+'<li>Private discharge consents, septic tanks and individual farm locations are not in DAERA\'s open data.</li>' +
+'<li>River tests are published raw and stop at 2024. The farm census is from 2019.</li>' +
+'<li>Nothing here shows that anyone has broken a rule.</li></ul>';
+return h;
+}
+function renderRiv() {
+var head = $('rivHead'), el = $('rivBody'); if (!el) return; loadRivers();
+var h = '<h2>River by river</h2><p class="lede">Choose a river to see its own catchment: what the tests show, what could be feeding it, and what could be checked or fixed.</p><p class="notice"><strong>This is about causes, not blame.</strong> The aim is to find what can be put right and who is able to do it.</p>';
+if (!RIV.list) { head.innerHTML = h + '<p class="small" role="status">' + (RIV.listState === 'fail' ? 'The list of rivers could not be loaded. Please try again in a few minutes.' : 'Loading the rivers in the Lough Neagh catchment.') + '</p>'; el.innerHTML = ''; $('rivMap').parentNode.hidden = true; return; }
+var tested = RIV.list.filter(function (x) { return x.max != null; }), rest = RIV.list.filter(function (x) { return x.max == null; });
+h += '<div class="layers"><div class="lrow"><span class="llab">River</span><select id="rivPick" aria-label="Choose a river"><optgroup label="With phosphorus tests, highest first">' + tested.map(function (x) { return '<option value="' + x.id + '"' + (x.id === RIV.id ? ' selected' : '') + '>' + esc(x.name) + ' · ' + x.max.toFixed(3) + ' mg/l · ' + basinLabel(x.basin) + '</option>'; }).join('') + '</optgroup><optgroup label="No recent phosphorus tests">' + rest.map(function (x) { return '<option value="' + x.id + '"' + (x.id === RIV.id ? ' selected' : '') + '>' + esc(x.name) + ' · ' + basinLabel(x.basin) + '</option>'; }).join('') + '</optgroup></select></div></div>' +
+'<p class="small">' + RIV.list.length + ' river water bodies drain to the lough. ' + tested.length + ' have a test site with recent readings.</p>';
+var d = RIV.id ? RIV.data[RIV.id] : null; if (RIV.id) loadRiver(RIV.id);
+var cur = RIV.list.filter(function (x) { return x.id === RIV.id; })[0];
+h += '<h3 class="rivname">' + (cur ? esc(cur.name) : '') + '</h3>';
+head.innerHTML = h;
+if (!d || d === 'loading') { el.innerHTML = '<p class="small" role="status">Gathering everything recorded for this river. This takes a few seconds.</p>'; $('rivMap').parentNode.hidden = true; return; }
+if (d === 'fail') { el.innerHTML = '<p class="small">The records for this river could not be loaded. Please try again in a few minutes.</p>'; $('rivMap').parentNode.hidden = true; return; }
+$('rivMap').parentNode.hidden = false; rivMapDraw(d);
+$('rivCap').innerHTML = '<span class="key"><span class="hp p">T</span>test site</span><span class="key"><span class="hp i">W</span>sewage works</span><span class="key"><span class="hp s">O</span>storm overflow or pumping station</span><span class="key">outline: this river\'s catchment</span>';
+el.innerHTML = rivHtml(d);
+}
 function showView() {
-var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : location.hash === '#investigate' ? 'Investigate' : location.hash === '#forecast' ? 'Forecast' : 'Map';
-['Map', 'Analysis', 'Areas', 'Satellite', 'Investigate', 'Forecast'].forEach(function (n) {
+var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : location.hash === '#investigate' ? 'Investigate' : location.hash === '#forecast' ? 'Forecast' : location.hash === '#rivers' ? 'Rivers' : 'Map';
+['Map', 'Analysis', 'Areas', 'Rivers', 'Satellite', 'Investigate', 'Forecast'].forEach(function (n) {
 $('view' + n).hidden = n !== v;
 if (n === v) $('tab' + n).setAttribute('aria-current', 'page'); else $('tab' + n).removeAttribute('aria-current');
 });
-if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (v === 'Investigate') renderInv(); else if (v === 'Forecast') renderFc(); else if (MAP) MAP.invalidateSize();
+if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (v === 'Investigate') renderInv(); else if (v === 'Forecast') renderFc(); else if (v === 'Rivers') renderRiv(); else if (MAP) MAP.invalidateSize();
 }
 /* ---------- Sentinel-2 pictures for a chosen day ---------- */
 var S2BOX = [[54.42, -6.78], [54.82, -6.06]], S2DAYS = {}, S2IMG = {}, S2STATE = { 'true': '', algae: '' };
@@ -1453,6 +1546,7 @@ var id = t.id; render();
 if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
 });
 document.addEventListener('change', function (e) {
+if (e.target && e.target.id === 'rivPick' && /^[A-Za-z0-9]{8,30}$/.test(e.target.value)) { RIV.id = e.target.value; renderRiv(); if ($('rivPick')) $('rivPick').focus({ preventScroll: true }); return; }
 if (e.target && (e.target.id === 'invDate' || e.target.id === 'invPick') && /^20\d\d-\d\d-\d\d$/.test(e.target.value)) { INV.date = e.target.value; renderInv(); return; }
 if (e.target && e.target.id === 's2year' && /^(20\d\d)?$/.test(e.target.value)) { state.s2year = e.target.value; state.s2date = null; var known = s2Days(); if (Array.isArray(known) && known.length) state.s2date = (known.filter(function (x) { return x.cloud <= 20; })[0] || known[0]).date; render(); if ($('s2year')) $('s2year').focus({ preventScroll: true }); return; }
 if (e.target && e.target.id === 's2date' && /^20\d\d-\d\d-\d\d$/.test(e.target.value)) { state.s2date = e.target.value; render(); if ($('s2date')) $('s2date').focus({ preventScroll: true }); return; }

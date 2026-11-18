@@ -267,3 +267,18 @@ table.sat.inv thead th { white-space: nowrap; padding-left: 8px; padding-right: 
 .hotnear h3 { font-family: var(--display); font-size: 1rem; }
 .hotnear .invfinds > div { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 0; }
 .hotnear .invfinds dd { font-size: 0.9rem; }
+/* rivers */
+#rivHead, #rivBody { display: flex; flex-direction: column; gap: 14px; }
+#viewRivers { display: flex; flex-direction: column; gap: 14px; }
+#viewRivers[hidden] { display: none; }
+#rivBody h3, #rivHead h3 { font-family: var(--display); font-size: 1.1rem; margin-top: 10px; }
+#rivHead h3.rivname { font-size: 1.5rem; margin-top: 4px; }
+#rivBody p, #rivHead p { max-width: 70ch; }
+#rivHead .layers { padding: 0; }
+#rivMap { height: clamp(260px, 42vh, 420px); border-radius: 8px; background: var(--land); font-family: var(--body); }
+.rivmapbox { position: static; max-width: 820px; }
+.hp.rv { width: auto; min-width: 22px; height: 20px; padding: 0 3px; font-size: 10px; }
+.rivsite { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.rivsite .charts { max-width: 820px; }
+.rivacts { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 10px; max-width: 74ch; }
+.rivacts .who { display: block; font-size: 0.84rem; color: var(--muted); margin-top: 2px; }

@@ -23,6 +23,7 @@
 <a class="tab" id="tabMap" href="#explore">Map</a>
 <a class="tab" id="tabAnalysis" href="#analysis">Analysis</a>
 <a class="tab" id="tabAreas" href="#areas">Key areas</a>
+<a class="tab" id="tabRivers" href="#rivers">Rivers</a>
 <a class="tab" id="tabSatellite" href="#satellite">Satellite</a>
 <a class="tab" id="tabInvestigate" href="#investigate">Investigate</a>
 <a class="tab" id="tabForecast" href="#forecast">Forecast</a>
@@ -69,6 +70,11 @@
 <div class="side"><div id="areasBody"></div></div>
 </div>
 </section>
+<section id="viewRivers" class="analysis" hidden>
+<div id="rivHead"></div>
+<div class="mapbox rivmapbox"><div id="rivMap" role="group" aria-label="Map of the chosen river's catchment"></div><div class="mapcap" id="rivCap"></div></div>
+<div id="rivBody"></div>
+</section>
 <section id="viewSatellite" class="analysis" hidden>
 <div id="satBody"></div>
 </section>
@@ -95,6 +101,7 @@
 <li>Past 30 days of weather: Open-Meteo weather model archive (open-meteo.com), CC BY 4.0.</li>
 <li>Buoy readings, confirmed blue-green algae locations and treatment works: DAERA open data, Open Government Licence v3.0. Buoy readings are provisional and not validated.</li>
 <li>River phosphorus tests 1990 to 2024, water body status 2018 and NI Water storm overflows (May 2024): DAERA open data, Open Government Licence v3.0. The river test data is published raw and may contain errors.</li>
+<li>Rivers tab: DAERA river water body outlines (2018), river phosphorus, ammonia and oxygen demand tests to 2024, NI Water works and overflows, pollution incidents, field risk scores and the 2019 farm census. Open Government Licence v3.0.</li>
 <li>Key areas: the same DAERA river test, storm overflow and pollution incident data, ranked place by place. Storm overflow figures are NI Water model predictions, not measurements.</li>
 <li>Likely sources: the DAERA datasets above matched to DAERA's Local Management Area outlines. Livestock is shared between basins by land area, which is an estimate.</li>
 <li>Land cover: Corine Land Cover 2018, Copernicus Land Monitoring Service, European Environment Agency.</li>
