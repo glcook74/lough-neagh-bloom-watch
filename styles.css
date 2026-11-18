@@ -107,6 +107,21 @@ table.src th[scope="row"] { white-space: normal; font-size: 0.8rem; }
 table.src td { text-align: right; padding-right: 10px; }
 table.src thead th:not(.lh) { text-align: right; padding-right: 10px; }
 .notes { padding-left: 1.1rem; margin: 0; font-size: 0.86rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; max-width: 62ch; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab { padding: 10px 16px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.tab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.analysis { min-width: 0; }
+#analysisBody { display: flex; flex-direction: column; gap: 14px; }
+#analysisBody h3 { font-family: var(--display); font-size: 1.1rem; margin-top: 10px; }
+#analysisBody p { max-width: 70ch; }
+.finds { padding-left: 1.1rem; margin: 0; display: flex; flex-direction: column; gap: 8px; max-width: 70ch; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.charts .chart { min-width: 0; }
+.charttitle { font-size: 0.82rem; font-weight: 600; padding: 2px 4px 6px; }
+table.an th[scope="row"] { white-space: normal; min-width: 8.5rem; font-size: 0.82rem; }
+table.an td { text-align: right; padding-right: 10px; }
+table.an thead th:not(.lh) { text-align: right; padding-right: 10px; white-space: normal; min-width: 5.2rem; }
+table.an .badge { font-size: 0.72rem; }
 .legendbox summary { cursor: pointer; font-size: 0.86rem; font-weight: 600; padding: 6px 0; }
 .legendimg { background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 320px; overflow: auto; }
 .legendimg img { display: block; max-width: none; }

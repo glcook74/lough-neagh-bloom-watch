@@ -16,6 +16,10 @@ This is a demonstration model. The lough facts are real. The weather and risk nu
 
 There is no build step. Vercel serves these files as they are.
 
+## Tabs
+
+The page has two tabs. **Map** is the map with its layers and guided tour. **Analysis** compares the seven river basins side by side: measured phosphorus, farming and sewage pressure, charts and the full table of figures.
+
 ## Map
 
 The map is the main feature. The **Map layers** box under it switches the view (map, Sentinel-2 cloudless satellite image from EOX, or a NASA daily photo) and turns any data layer on or off. The seven-step tour switches on suitable layers for each step.

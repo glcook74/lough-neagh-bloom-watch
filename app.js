@@ -587,6 +587,83 @@ h += '<p class="small">If you see a bloom, stay out of the water, keep pets away
 }
 return h;
 }
+/* ---------- analysis tab ---------- */
+function spearman(a, b) {
+var n = a.length, d = 0; for (var i = 0; i < n; i++) d += (a[i] - b[i]) * (a[i] - b[i]);
+return n > 2 ? 1 - 6 * d / (n * (n * n - 1)) : 0;
+}
+function scatterSvg(list, label) {
+var B = SOURCES.basins.filter(function (b) { return b.tests && pressure(list, b); }), N = SOURCES.basins.length;
+var W = 340, H = 226, L = 38, R = 12, T = 12, Bt = 28, ymax = Math.ceil(Math.max.apply(null, B.map(function (b) { return b.tests.mean; })) / 0.05) * 0.05;
+var X = function (v) { return L + (v - 1) / (N - 1) * (W - L - R); }, Y = function (v) { return H - Bt - v / ymax * (H - T - Bt); };
+var h = '';
+for (var g = 0; g <= ymax + 1e-9; g += 0.05) h += '<line x1="' + L + '" y1="' + Y(g) + '" x2="' + (W - R) + '" y2="' + Y(g) + '" stroke="var(--line)" stroke-width="1"/><text class="ct" x="' + (L - 6) + '" y="' + (Y(g) + 3) + '" text-anchor="end">' + g.toFixed(2) + '</text>';
+h += '<text class="ct" x="' + L + '" y="' + (H - 8) + '">lower ' + label + ' pressure</text><text class="ct" x="' + (W - R) + '" y="' + (H - 8) + '" text-anchor="end">higher ' + label + ' pressure</text>';
+B.forEach(function (b) {
+var x = X(N + 1 - pressure(list, b).avg), y = Y(b.tests.mean), right = x < W * 0.62;
+h += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/>' +
+'<text class="ct strong" x="' + (x + (right ? 8 : -8)).toFixed(1) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="' + (right ? 'start' : 'end') + '">' + basinLabel(b.name).replace(' streams', '').replace(' Water', '') + '</text>';
+});
+return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Scatter chart of phosphorus measured in each basin against its ' + label + ' pressure score">' + h + '</svg>';
+}
+function renderAnalysis() {
+var el = $('analysisBody'); if (!el) return;
+if (!SOURCES) { el.innerHTML = '<p class="small">Working out the analysis from the DAERA data. This can take a few seconds the first time. If this message stays, the service is not answering just now.</p>'; return; }
+var B = SOURCES.basins.slice().filter(function (b) { return b.tests; }), N = SOURCES.basins.length, LEV = ['Low', 'Middle', 'High'];
+B.sort(function (a, b) { return b.tests.mean - a.tests.mean; });
+var info = B.map(function (b) { return { b: b, pr: rankOf(testMean, b), fr: pressureRank(FARM_IND, b), sr: pressureRank(SEWAGE_IND, b), d: b.tests.sitesBoth ? b.tests.nowBoth - b.tests.thenBoth : null }; });
+var badge = function (rank) { return '<span class="badge l' + levelOf(rank) + '">' + LEV[levelOf(rank)] + '</span> ' + ordinal(rank); };
+var h = '<h2>Where is the phosphorus likely to come from?</h2>' +
+'<p class="lede">Every dataset on this site, matched to the seven river basins that flow into the lough and compared side by side.</p>';
+/* findings */
+var top = info[0], second = info[1], low = info[info.length - 1];
+var odd = info.filter(function (i) { return i.fr - i.pr >= 3; })[0];
+var up = info.filter(function (i) { return i.d != null && i.d > 0.002; }), down = info.filter(function (i) { return i.d != null && i.d < -0.002; });
+var rf = spearman(info.map(function (i) { return i.pr; }), info.map(function (i) { return i.fr; })), rs = spearman(info.map(function (i) { return i.pr; }), info.map(function (i) { return i.sr; }));
+h += '<h3>What stands out</h3><ul class="finds">' +
+'<li><strong>' + basinLabel(top.b.name) + ' and ' + basinLabel(second.b.name) + '</strong> have the most phosphorus in their rivers, at ' + top.b.tests.mean.toFixed(3) + ' and ' + second.b.tests.mean.toFixed(3) + ' mg/l. Their farming pressure ranks ' + ordinal(top.fr) + ' and ' + ordinal(second.fr) + ' of ' + N + ', and their sewage pressure ' + ordinal(top.sr) + ' and ' + ordinal(second.sr) + '.</li>' +
+'<li><strong>' + basinLabel(low.b.name) + '</strong> has the least, at ' + low.b.tests.mean.toFixed(3) + ' mg/l, with farming pressure ranked ' + ordinal(low.fr) + ' and sewage pressure ' + ordinal(low.sr) + '.</li>' +
+(odd ? '<li><strong>' + basinLabel(odd.b.name) + '</strong> has more phosphorus than its farming pressure would suggest: ' + ordinal(odd.pr) + ' for phosphorus but ' + ordinal(odd.fr) + ' for farming. Its sewage pressure ranks ' + ordinal(odd.sr) + ', higher than its farming pressure.</li>' : '') +
+'<li><strong>Since 2015 to 2019</strong>, average phosphorus at the same test sites has risen in ' + up.length + ' basin' + (up.length === 1 ? '' : 's') + (up.length ? ' (' + up.map(function (i) { return basinLabel(i.b.name); }).join(', ') + ')' : '') + ' and fallen in ' + down.length + (down.length ? ' (' + down.map(function (i) { return basinLabel(i.b.name); }).join(', ') + ')' : '') + '.</li>' +
+'<li><strong>Pressure and phosphorus move together.</strong> Ranking the basins by phosphorus and by pressure gives a rank correlation of ' + rf.toFixed(2) + ' for farming and ' + rs.toFixed(2) + ' for sewage, where 1 is a perfect match. With only seven basins that is a pattern, not proof.</li>' +
+'</ul>';
+/* summary table */
+h += '<h3>Basin by basin</h3><div class="tablewrap"><table class="wx an"><thead><tr><th scope="col" class="lh">Basin</th><th scope="col">Phosphorus in rivers</th><th scope="col">Since 2015 to 2019</th><th scope="col">Farming pressure</th><th scope="col">Sewage pressure</th><th scope="col">Look first at</th></tr></thead><tbody>';
+info.forEach(function (i) {
+var ch = i.d == null ? 'n/a' : Math.abs(i.d) <= 0.002 ? 'No change' : (i.d > 0 ? 'Up ' : 'Down ') + Math.abs(i.d).toFixed(3);
+h += '<tr><th scope="row">' + basinLabel(i.b.name) + '</th><td>' + i.b.tests.mean.toFixed(3) + ' mg/l</td><td>' + ch + '</td><td>' + badge(i.fr) + '</td><td>' + badge(i.sr) + '</td><td>' + (i.fr <= i.sr - 2 ? 'Farming' : i.sr <= i.fr - 2 ? 'Sewage' : 'Both') + '</td></tr>';
+});
+h += '</tbody></table></div><p class="small">Phosphorus is the 2020 to 2024 average of dissolved phosphorus across each basin\'s DAERA test sites. Pressure ranks run from 1st, the highest, to ' + ordinal(N) + '. The top two count as high and the bottom two as low.</p>';
+/* charts */
+h += '<h3>Does pressure track phosphorus?</h3><div class="charts"><div class="chart"><p class="charttitle">Phosphorus in rivers (mg/l) against farming pressure</p>' + scatterSvg(FARM_IND, 'farming') + '</div><div class="chart"><p class="charttitle">Phosphorus in rivers (mg/l) against sewage pressure</p>' + scatterSvg(SEWAGE_IND, 'sewage') + '</div></div>' +
+'<p class="small">Each dot is a basin. If pressure explained phosphorus perfectly, the dots would climb from bottom left to top right.</p>';
+/* full matrix */
+var cols = SOURCES.basins;
+h += '<h3>All the figures</h3><div class="tablewrap"><table class="wx an"><thead><tr><th scope="col" class="lh">Per basin</th>' + cols.map(function (b) { return '<th scope="col">' + basinLabel(b.name) + '</th>'; }).join('') + '</tr></thead><tbody>';
+var row = function (label, fn, dec, unit) { return '<tr><th scope="row">' + label + '</th>' + cols.map(function (b) { var v = fn(b); return '<td>' + (v == null || !isFinite(v) ? 'n/a' : (dec ? v.toFixed(dec) : nf(v)) + (unit || '')) + '</td>'; }).join('') + '</tr>'; };
+h += row('Area, square km', function (b) { return b.km2; }) + row('Phosphorus in rivers, mg/l', testMean, 3) + row('River test sites', function (b) { return b.tests ? b.tests.sites : null; }) +
+FARM_IND.map(function (i) { return row(i[0], i[1], i[2], i[3]); }).join('') + row('Sheep per square km', function (b) { return b.sheep / b.km2; }) +
+SEWAGE_IND.map(function (i) { return row(i[0], i[1], i[2], i[3]); }).join('') +
+row('Storm overflows classed unsatisfactory', function (b) { return b.unsat; }) + row('All confirmed pollution incidents, 2011 to 2024', function (b) { return b.incidents; }) + row('Of those, since 2020', function (b) { return b.incRecent; }) + row('Industry incidents', function (b) { return b.incIndustry; });
+h += '</tbody></table></div>';
+/* whole catchment */
+h += '<h3>The whole catchment</h3><p>AFBI\'s modelling for the whole catchment puts 61% of the phosphorus reaching the lough down to agriculture, 29% to wastewater, 9% to other sources and 1.3% to septic tanks. The basin comparison above is a separate check using different data, and it points the same way: the basins with the most farming and sewage pressure have the most phosphorus in their rivers.</p>' +
+'<h3>What this does and does not show</h3><ul class="notes">' +
+'<li>It ranks pressure. It does not measure how much pollution each source causes, and it cannot point to a farm, a home or a works.</li>' +
+'<li>Farming and sewage pressure tend to be high in the same basins, so this data cannot cleanly separate the two.</li>' +
+'<li>Seven basins is a small number. A difference of one rank is not meaningful.</li>' +
+'<li>Livestock is published by council area and shared between basins by land area, which is an estimate. The field risk map covers only some farmland. Storm overflow spills are NI Water\'s predictions. The datasets span 2007 to 2024.</li>' +
+'<li>Septic tanks, industry and the phosphorus already in the lough bed are not counted. The lough shore basin\'s area leaves out the lough itself.</li>' +
+'<li>The river test data is published raw and may contain errors. Readings of 5 mg/l or more and sites with fewer than six readings are left out.</li>' +
+'</ul><p class="small">Sources: DAERA open data under the Open Government Licence v3.0 (river tests 1990 to 2024, farm census 2019, agricultural risk map, pollution incidents 2011 to 2024, NI Water storm overflows and treatment works May 2024, Local Management Areas) and AFBI modelling, 2021 reference year, provisional.</p>';
+el.innerHTML = h;
+}
+function showView() {
+var a = location.hash === '#analysis';
+$('viewMap').hidden = a; $('viewAnalysis').hidden = !a;
+if (a) { $('tabAnalysis').setAttribute('aria-current', 'page'); $('tabMap').removeAttribute('aria-current'); renderAnalysis(); }
+else { $('tabMap').setAttribute('aria-current', 'page'); $('tabAnalysis').removeAttribute('aria-current'); if (MAP) MAP.invalidateSize(); }
+}
 /* ---------- layer controls and map caption ---------- */
 function chip(attr, val, label, pressed, disabled) {
 return '<button type="button" class="chip" id="chip_' + attr + '_' + val + '" data-' + attr + '="' + val + '" aria-pressed="' + !!pressed + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
@@ -684,7 +761,7 @@ if (!j || !j.ok || !j.basins || !j.basins.length) return;
 /* The lough shore basin's outline includes the lough itself, so take the 383 square km of water off its area. */
 j.basins.forEach(function (x) { if (x.name === 'Lough Neagh' && x.km2 > 600) x.km2 -= 383; });
 SOURCES = j; if (!j.basins.some(function (x) { return x.name === state.basin; })) state.basin = j.basins[0].name;
-buildSources(); render();
+buildSources(); render(); showView();
 }).catch(function () {});
 }
 function loadLive() {
@@ -730,6 +807,8 @@ if ($('satDate')) $('satDate').focus({ preventScroll: true });
 }
 });
 render();
+window.addEventListener('hashchange', showView);
+showView();
 loadLive();
 loadData();
 loadLand();
