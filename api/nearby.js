@@ -26,11 +26,11 @@ module.exports = async function (req, res) {
   var dea = Array.isArray(got[5]) && got[5][0] ? got[5][0].attributes : null;
   res.setHeader('Cache-Control', 'public, s-maxage=86400');
   res.status(200).json({ ok: true, lat: lat, lon: lon, km: R,
-    works: list(got[0], function (a) { return raw ? a : { name: a.Name || a.NAME || a.Asset_Name || null, into: a.Receiving_Waterbody_Name || null, all: undefined }; }),
-    worksFields: raw && Array.isArray(got[0]) && got[0][0] ? Object.keys(got[0][0].attributes) : undefined,
+    works: list(got[0], function (a) { return { name: a.Name, into: a.Receiving_Waterbody_Name || null }; }),
     overflows: list(got[1], function (a) { return { name: a.Name, spills: a.Predicted_Spill_Frequency___Yea || 0, vol: a.Predicted_Spill_Volume___Year__ || 0, cls: a.Storm_Overflow_Classification || '', into: a.Receiving_Waterbody_Name || '' }; }),
     incidents: inc,
-    waste: raw ? list(got[3], function (a) { return a; }) : list(got[3], function (a) { return a; }).slice ? list(got[3], function (a) { return a; }).slice(0, 30) : got[3],
-    poultry: Array.isArray(got[4]) ? { count: got[4].length, capped: got[4].length >= 200, sample: raw ? got[4].slice(0, 3).map(function (f) { return f.attributes; }) : undefined, nearest: list(got[4], function () { return {}; }).slice(0, 5) } : got[4],
+    /* Site names only. The register also holds contact details, which are not passed on. */
+    waste: Array.isArray(got[3]) ? list(got[3], function (a) { return { name: a.SiteName, town: a.SiteTown, status: a.SiteStatus }; }) : got[3],
+    poultry: Array.isArray(got[4]) ? { count: got[4].length, capped: got[4].length >= 200, nearest: list(got[4], function () { return {}; }).slice(0, 5) } : got[4],
     farmArea: dea ? { name: dea.DEAName, farms: dea.NumberOfFarms, farmedHa: dea.TotalAreaFarmedInHa, cattle: dea.TotalNumberofCattle, sheep: dea.TotalNumberofsheep, pigs: dea.TotalNumberOfPigs, poultry: (dea.TotalNumberOfPoultry000 || 0) * 1000 } : null });
 };

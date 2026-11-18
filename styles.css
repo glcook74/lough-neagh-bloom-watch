@@ -262,3 +262,8 @@ table.sat.inv thead th { white-space: nowrap; padding-left: 8px; padding-right: 
 #fcBody h3 { font-family: var(--display); font-size: 1.1rem; margin-top: 10px; }
 #fcBody p { max-width: 70ch; }
 .fcsteps { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; }
+.hotnear:empty { display: none; }
+.hotnear { padding: 10px 6px 4px; border-top: 1px solid var(--line); margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+.hotnear h3 { font-family: var(--display); font-size: 1rem; }
+.hotnear .invfinds > div { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 0; }
+.hotnear .invfinds dd { font-size: 0.9rem; }

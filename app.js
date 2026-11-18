@@ -727,6 +727,7 @@ var items = hotItems(), pts = [];
 items.forEach(function (it) {
 if (it.cat === 'i') L.rectangle([[it.x.b[0], it.x.b[1]], [it.x.b[2], it.x.b[3]]], { color: '#bf3528', weight: 2, fillColor: '#bf3528', fillOpacity: 0.18, interactive: false }).addTo(HOTGRP.i);
 var m = L.marker([it.lat, it.lon], { icon: hotIcon(it), title: it.id + ' ' + it.name, alt: it.id + ' ' + it.name, zIndexOffset: it.cat === 'p' ? 400 : it.cat === 's' ? 300 : 200 }).bindPopup(hotPopup(it));
+m.on('click', function () { loadNear(it); });
 m.addTo(HOTGRP[it.cat]); HOTPIN[it.id] = { it: it, m: m }; pts.push([it.lat, it.lon]);
 });
 HOTCL.forEach(function (c) {
@@ -752,12 +753,34 @@ hotAlgaeDone = true;
 DATA.algae.forEach(function (a) { L.circleMarker([a.lat, a.lon], { radius: 4.5, color: '#ffffff', weight: 1.5, fillColor: '#b0206a', fillOpacity: 0.9 }).bindTooltip(a.name + ', algae confirmed ' + fmtDate(a.date) + ' ' + a.date.slice(0, 4)).addTo(HOTGRP.a); });
 }
 }
+/* ---------- what is recorded near a pin ---------- */
+var NEAR = {}, nearFor = null;
+function loadNear(it) {
+nearFor = it; var key = it.id;
+if (NEAR[key] || !window.fetch) { renderNear(); return; }
+NEAR[key] = 'loading'; renderNear();
+fetch('/api/nearby?lat=' + it.lat + '&lon=' + it.lon + '&km=3').then(function (res) { return res.json(); }).then(function (j) { NEAR[key] = j && j.ok ? j : 'fail'; renderNear(); }).catch(function () { NEAR[key] = 'fail'; renderNear(); });
+}
+function renderNear() {
+var el = $('hotNear'), it = nearFor; if (!el) return; if (!it) { el.innerHTML = ''; return; }
+var d = NEAR[it.id], head = '<h3>Within 3 km of ' + it.id + ' · ' + esc(it.name) + '</h3>';
+if (d === 'loading' || !d) { el.innerHTML = head + '<p class="small" role="status">Looking up what DAERA records nearby.</p>'; return; }
+if (d === 'fail') { el.innerHTML = head + '<p class="small">The nearby records could not be loaded just now.</p>'; return; }
+var where = function (x) { return x.km == null ? '' : x.km.toFixed(1) + ' km ' + x.dir; }, rows = [];
+if (Array.isArray(d.works)) rows.push(['Sewage treatment works', d.works.length ? d.works.map(function (w) { return '<strong>' + esc(w.name) + '</strong>, ' + where(w) + (w.into ? ', discharging to the ' + esc(w.into) : ''); }).join('<br>') : 'None recorded.']);
+if (Array.isArray(d.overflows)) { var sp = d.overflows.filter(function (o) { return o.vol > 0; }); rows.push(['Storm overflows and pumping stations', d.overflows.length ? '<strong>' + d.overflows.length + '</strong> NI Water overflow ' + (d.overflows.length === 1 ? 'point' : 'points') + '. ' + (sp.length ? 'With a predicted spill: ' + sp.slice(0, 4).map(function (o) { return esc(o.name) + ' (' + nf(o.vol) + ' cubic metres a year, ' + where(o) + ')'; }).join('; ') + '.' : 'None has a predicted spill figure yet. NI Water lists ' + d.overflows.filter(function (o) { return /determined/i.test(o.cls); }).length + ' as still to be assessed.') + ' Nearest: ' + esc(d.overflows[0].name) + ', ' + where(d.overflows[0]) + '.' : 'None recorded.']); }
+if (d.incidents && d.incidents.squares != null) { var i = d.incidents; rows.push(['Pollution incidents, 2011 to 2024', i.total ? '<strong>' + i.total + '</strong> in the squares around here: ' + i.farm + ' recorded as farming, ' + i.sewage + ' as sewage or households, ' + i.industry + ' as industry, and ' + (i.total - i.farm - i.sewage - i.industry) + ' other or unknown. ' + i.recent + ' since 2020' + (i.high ? ', ' + i.high + ' rated high severity' : '') + '.' : 'None recorded.']); }
+if (d.farmArea) { var f = d.farmArea, ha = f.farmedHa || 1; rows.push(['Farming in the wider area', 'The ' + esc(tidyName(f.name)) + ' district electoral area (2019 farm census) has ' + nf(f.farms) + ' farms on ' + nf(f.farmedHa) + ' hectares: <strong>' + nf(f.cattle) + ' cattle, ' + nf(f.pigs) + ' pigs, ' + nf(f.poultry) + ' poultry</strong> and ' + nf(f.sheep) + ' sheep. That is ' + (f.cattle / ha).toFixed(1) + ' cattle, ' + (f.pigs / ha).toFixed(1) + ' pigs and ' + Math.round(f.poultry / ha) + ' poultry per hectare farmed. The census does not say where each farm is.']); }
+if (d.poultry && d.poultry.count != null) rows.push(['Poultry houses', d.poultry.count ? '<strong>' + d.poultry.count + (d.poultry.capped ? ' or more' : '') + '</strong> mapped within 3 km, the nearest ' + where(d.poultry.nearest[0]) + '. This comes from a DAERA layer marked as a test, so treat it as a pointer only.' : 'None mapped within 3 km in DAERA\'s test layer.']);
+if (Array.isArray(d.waste)) rows.push(['Licensed waste sites', d.waste.length ? '<strong>' + d.waste.length + '</strong> on DAERA\'s public register within 3 km. These are licensed and inspected, and most do not discharge to rivers.' : 'None within 3 km.']);
+el.innerHTML = head + '<dl class="invfinds">' + rows.map(function (x) { return '<div><dt>' + x[0] + '</dt><dd>' + x[1] + '</dd></div>'; }).join('') + '</dl><p class="small"><strong>Near is not the same as upstream.</strong> Only things upstream of a test site can affect its reading, and this list does not know which way the water flows. Nothing here shows that any site has broken a rule. Private businesses with their own discharge consents are not in DAERA\'s open data, so they are missing from this list.</p>';
+}
 function focusHot(id) {
 var mapEl = $('hotMap');
 if (HOTMAP) {
 var cl = HOTCL.filter(function (c) { return c.id === id; })[0], pin = HOTPIN[id];
 if (cl) { if (!hotOn.c) toggleHot('c'); HOTMAP.closePopup(); HOTMAP.fitBounds(cl.ring.getBounds().pad(0.25)); }
-else if (pin) { if (!hotOn[pin.it.cat]) toggleHot(pin.it.cat); HOTMAP.setView([pin.it.lat, pin.it.lon], Math.max(HOTMAP.getZoom(), 13)); pin.m.openPopup(); }
+else if (pin) { if (!hotOn[pin.it.cat]) toggleHot(pin.it.cat); HOTMAP.setView([pin.it.lat, pin.it.lon], Math.max(HOTMAP.getZoom(), 13)); pin.m.openPopup(); loadNear(pin.it); }
 }
 var box = mapEl.getBoundingClientRect();
 if (box.top < 0 || box.bottom > window.innerHeight) mapEl.scrollIntoView({ block: 'center' });
@@ -789,7 +812,7 @@ if (S.length) { var un = S.filter(function (i) { return i.x.cls === 'Unsatisfact
 if (I.length) f.push('<strong>The square with most pollution incidents</strong> is in the ' + basinLabel(I[0].x.basin) + ' basin, with ' + I[0].x.t + ' since 2011. Recorded source: ' + incWho(I[0].x) + '.');
 if (HOTCL.length) f.push('<strong>' + HOTCL.length + ' ' + (HOTCL.length === 1 ? 'place is' : 'places are') + ' flagged by more than one dataset</strong>, ringed on the map. These are the strongest candidates for a closer look.');
 h += '<div><h3>What stands out</h3><ul class="finds">' + f.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div>';
-h += '<p class="small">Tap any row to find it on the map.</p>';
+h += '<p class="small">Tap any row or pin to find it on the map and see what is recorded within 3 km: sewage works, storm overflows, pollution incidents and farming.</p>';
 if (HOTCL.length) h += '<div><h3>Flagged by more than one dataset</h3><p class="small">Two or more different kinds of flag within 2 km of each other.</p><ol class="hotlist">' + HOTCL.map(function (c) {
 return hotRow(c.id, 'c', false, esc(c.name), basinLabel(c.basin) + ' basin · ' + c.items.map(function (g) { return g.id; }).join(', '), c.items.length + ' flags');
 }).join('') + '</ol></div>';
