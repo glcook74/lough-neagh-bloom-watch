@@ -103,6 +103,10 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .satrow { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
 .satrow input { font: inherit; padding: 8px 10px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .leaflet-popup-content { font-family: var(--body); font-size: 13px; line-height: 1.45; margin: 10px 12px; }
+table.src th[scope="row"] { white-space: normal; font-size: 0.8rem; }
+table.src td { text-align: right; padding-right: 10px; }
+table.src thead th:not(.lh) { text-align: right; padding-right: 10px; }
+.notes { padding-left: 1.1rem; margin: 0; font-size: 0.86rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; max-width: 62ch; }
 .legendbox summary { cursor: pointer; font-size: 0.86rem; font-weight: 600; padding: 6px 0; }
 .legendimg { background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 320px; overflow: auto; }
 .legendimg img { display: block; max-width: none; }

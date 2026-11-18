@@ -79,20 +79,20 @@ var LV = ['Low', 'Medium', 'High'];
 var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 var YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-var state = { scn: 'B', step: 0, day: 0, base: 'map', satDate: YESTERDAY, shade: 'none', on: {}, stock: 'cattle' };
+var state = { scn: 'B', step: 0, day: 0, base: 'map', satDate: YESTERDAY, shade: 'none', on: {}, stock: 'cattle', basin: 'River Blackwater' };
 /* Each step of the tour switches on the layers that suit it. The reader can then change them freely. */
 function preset() {
 var s = state.step, live = state.scn === 'L' && !!LIVE;
 state.shade = s === 1 ? 'sup' : 'none';
 state.on = { rivers: s === 2, works: s === 2, stake: s === 3, zones: s >= 4, buoys: s === 4 && live, algae: s === 4 && live, fields: false, incidents: false, srp: false, overflows: false };
 }
-function landMode() { return state.shade === 'basins' ? 'basins' : state.shade === 'farms' ? 'farms' : state.shade === 'cover' ? 'cover' : state.shade === 'status' ? 'status' : state.on.incidents ? 'incidents' : state.on.srp ? 'srp' : state.on.overflows ? 'sewage' : state.on.fields ? 'fields' : 'rivers'; }
+function landMode() { return state.shade === 'sources' ? 'sources' : state.shade === 'basins' ? 'basins' : state.shade === 'farms' ? 'farms' : state.shade === 'cover' ? 'cover' : state.shade === 'status' ? 'status' : state.on.incidents ? 'incidents' : state.on.srp ? 'srp' : state.on.overflows ? 'sewage' : state.on.fields ? 'fields' : 'rivers'; }
 function setLand(m) {
-state.shade = m === 'basins' || m === 'farms' || m === 'cover' || m === 'status' ? m : 'none';
+state.shade = m === 'basins' || m === 'farms' || m === 'cover' || m === 'status' || m === 'sources' ? m : 'none';
 state.on.fields = m === 'fields'; state.on.incidents = m === 'incidents'; state.on.srp = m === 'srp'; state.on.overflows = m === 'sewage';
 state.on.rivers = m === 'rivers'; state.on.works = m === 'rivers' || m === 'sewage';
 }
-var DATA = null, LAND = null, WATER = null;
+var DATA = null, LAND = null, WATER = null, SOURCES = null;
 var cache = {};
 var LIVE = null;
 function run() {
@@ -156,6 +156,24 @@ var bu = (DATA.buoys || []).filter(function (b) { return b.lat != null; });
 if (bu.length) LAYERS.buoys = L.layerGroup(bu.map(function (b) {
 return L.marker([b.lat, b.lon], { title: b.name + ' buoy', alt: b.name + ' buoy', zIndexOffset: 300, icon: mk('<span class="bm">B</span>', 18) });
 }));
+}
+var wasSources = false;
+function sourceStyle(f) {
+var b = SOURCES ? SOURCES.basins.filter(function (x) { return x.name === f.properties.NAME; })[0] : null;
+if (!b) return { color: '#ffffff', weight: 1, fillColor: '#9aa3a8', fillOpacity: 0.3 };
+var r = rankOf(testMean, b), N = SOURCES.basins.length, sel = b.name === state.basin;
+return { color: sel ? '#10262e' : '#ffffff', weight: sel ? 3.5 : 1.5, fillColor: r == null ? '#9aa3a8' : VIOLETS[Math.min(4, Math.floor((N - r) / N * 5))], fillOpacity: 0.65 };
+}
+function buildSources() {
+if (!MAP || !SOURCES || !LAND || !LAND.basins || LAYERS.sources) return;
+LAYERS.sources = L.geoJSON(LAND.basins, {
+style: sourceStyle,
+onEachFeature: function (f, l) {
+var known = SOURCES.basins.some(function (x) { return x.name === f.properties.NAME; });
+if (known) l.on('click', function () { state.basin = f.properties.NAME; render(); });
+else l.bindPopup('<strong>' + esc(f.properties.NAME) + '</strong><br>Does not flow into the lough');
+}
+});
 }
 function buildWater() {
 if (!MAP || !WATER) return;
@@ -318,13 +336,84 @@ h += '<p class="small">Number of water bodies in the map area at each grade, Wat
 }
 return h;
 }
+/* ---------- likely sources, basin by basin ---------- */
+var BASIN_LABEL = { 'River Blackwater': 'Blackwater', 'Braid and Main': 'Main', 'Lough Neagh': 'Lough shore streams' };
+function basinLabel(n) { return BASIN_LABEL[n] || n; }
+var FARM_IND = [
+['Cattle per square km', function (b) { return b.cattle / b.km2; }, 0],
+['Pigs per square km', function (b) { return b.pigs / b.km2; }, 0],
+['Poultry per square km', function (b) { return b.poultry / b.km2; }, 0],
+['High-risk share of scored farmland', function (b) { var f = b.fieldHa, t = f ? f.low + f.medium + f.high : 0; return t ? f.high / t * 100 : null; }, 0, '%'],
+['Farm pollution incidents per 100 square km', function (b) { return b.incFarm / b.km2 * 100; }, 1]
+];
+var SEWAGE_IND = [
+['Storm overflow spills, cubic metres per square km a year', function (b) { return b.spillVol / b.km2; }, 0],
+['Storm overflows per 100 square km', function (b) { return b.overflows / b.km2 * 100; }, 1],
+['Treatment works per 100 square km', function (b) { return b.works / b.km2 * 100; }, 1],
+['Sewage and household incidents per 100 square km', function (b) { return b.incSewage / b.km2 * 100; }, 1]
+];
+function ordinal(n) { return n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'); }
+/* Rank 1 is the highest value among the basins. Basins with no value are left out. */
+function rankOf(fn, b) {
+var v = fn(b); if (v == null || !isFinite(v)) return null;
+var r = 1; SOURCES.basins.forEach(function (o) { var w = fn(o); if (w != null && isFinite(w) && w > v) r++; });
+return r;
+}
+function pressure(list, b) {
+var s = 0, n = 0; list.forEach(function (ind) { var r = rankOf(ind[1], b); if (r != null) { s += r; n++; } });
+if (!n) return null;
+return { avg: s / n };
+}
+function pressureRank(list, b) {
+var mine = pressure(list, b); if (!mine) return null;
+var r = 1; SOURCES.basins.forEach(function (o) { var p = pressure(list, o); if (p && p.avg < mine.avg - 1e-9) r++; });
+return r;
+}
+/* The top two basins count as high, the bottom two as low. */
+function levelOf(rank) { var N = SOURCES.basins.length; return rank <= 2 ? 2 : rank >= N - 1 ? 0 : 1; }
+function place(rank, word) { var N = SOURCES.basins.length; return rank === 1 ? word + ' of ' + N : rank === N ? 'lowest of ' + N : ordinal(rank) + ' ' + word + ' of ' + N; }
+function testMean(b) { return b.tests ? b.tests.mean : null; }
+function indRows(list, b) {
+return list.map(function (ind) {
+var v = ind[1](b), r = rankOf(ind[1], b);
+return '<tr><th scope="row">' + ind[0] + '</th><td>' + (v == null || !isFinite(v) ? 'n/a' : (ind[2] ? v.toFixed(ind[2]) : nf(v)) + (ind[3] || '')) + '</td><td>' + (r == null ? '' : ordinal(r)) + '</td></tr>';
+}).join('');
+}
+function sourcesPanel() {
+if (!SOURCES) return '<p class="small">Working out the pressure on each basin from the DAERA data. This can take a few seconds the first time. If this message stays, the service is not answering just now.</p>';
+var B = SOURCES.basins, N = B.length, b = B.filter(function (x) { return x.name === state.basin; })[0] || B[0];
+var LEV = ['Low', 'Middle', 'High'], fp = pressure(FARM_IND, b), sp = pressure(SEWAGE_IND, b), tr = rankOf(testMean, b);
+var fr = fp ? pressureRank(FARM_IND, b) : null, sr = sp ? pressureRank(SEWAGE_IND, b) : null;
+var h = '<p>Every dataset on this site has been matched to the same river basins. Pick a basin to see which pressures stand out there, compared with the other ' + (N - 1) + '.</p>' +
+'<div class="seg" role="group" aria-label="Basin">' + B.map(function (x, i) { return '<button type="button" id="basin_' + i + '" data-basin="' + esc(x.name) + '" aria-pressed="' + (x.name === b.name) + '">' + basinLabel(x.name) + '</button>'; }).join('') + '</div>' +
+'<h3>' + basinLabel(b.name) + ' basin, ' + nf(b.km2) + ' square km</h3>';
+if (b.tests) h += '<div class="readout"><span>Phosphorus measured in its rivers</span><span class="badge l' + levelOf(tr) + '">' + b.tests.mean.toFixed(3) + ' mg/l, ' + place(tr, 'highest') + '</span></div>' +
+(b.tests.sitesBoth ? '<p class="small">Average of ' + b.tests.sites + ' test sites, 2020 to 2024. At the ' + b.tests.sitesBoth + ' sites also tested in 2015 to 2019 the average went from ' + b.tests.thenBoth.toFixed(3) + ' to ' + b.tests.nowBoth.toFixed(3) + ' mg/l.</p>' : '');
+if (fp && sp) {
+var fl = levelOf(fr), sl = levelOf(sr);
+h += '<div class="readout"><span>Farming pressure</span><span class="badge l' + fl + '">' + LEV[fl] + ', ' + place(fr, 'highest') + '</span></div>' +
+'<div class="readout"><span>Sewage pressure</span><span class="badge l' + sl + '">' + LEV[sl] + ', ' + place(sr, 'highest') + '</span></div>' +
+'<p>' + (fl === sl ? 'Farming and sewage pressure are both ' + LEV[fl].toLowerCase() + ' here compared with the other basins.' : 'Compared with the other basins, farming pressure is ' + LEV[fl].toLowerCase() + ' here and sewage pressure is ' + LEV[sl].toLowerCase() + '.') + ' ' + (fr <= sr - 2 ? 'That points to farming as the place to look first.' : sr <= fr - 2 ? 'That points to sewage as the place to look first.' : 'Neither stands out over the other, so both are worth looking at.') + '</p>';
+}
+h += '<div class="tablewrap"><table class="wx src"><thead><tr><th scope="col" class="lh">Farming</th><th scope="col">Value</th><th scope="col">Rank</th></tr></thead><tbody>' + indRows(FARM_IND, b) + '</tbody>' +
+'<thead><tr><th scope="col" class="lh">Sewage</th><th scope="col">Value</th><th scope="col">Rank</th></tr></thead><tbody>' + indRows(SEWAGE_IND, b) + '</tbody></table></div>' +
+'<p class="small">Rank 1st means the highest of the ' + N + ' basins. Each pressure level is the average of the ranks in its table.</p>' +
+'<h3>What this does and does not show</h3><ul class="notes">' +
+'<li>It shows where pressure is high compared with the other basins. It does not measure how much pollution each source causes, and it cannot point to a farm, a home or a works.</li>' +
+'<li>Livestock numbers are published by council area, so each area\'s animals are shared between basins by land area. That is an estimate.</li>' +
+'<li>The field risk map covers only some farmland, storm overflow spills are NI Water\'s predictions, and the datasets span 2007 to 2024.</li>' +
+'<li>Septic tanks, industry and the phosphorus already in the lough bed are not counted. The lough shore basin\'s area leaves out the lough itself.</li>' +
+'</ul>';
+return h;
+}
 function landSeg() {
 return '<div class="seg" role="group" aria-label="What to show on the map">' +
-[['rivers', 'River loads'], ['basins', 'Basins'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['fields', 'Fields'], ['incidents', 'Pollution'], ['srp', 'River tests'], ['sewage', 'Sewage'], ['status', 'Water status']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (landMode() === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
+[['rivers', 'River loads'], ['sources', 'Likely sources'], ['basins', 'Basins'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['fields', 'Fields'], ['incidents', 'Pollution'], ['srp', 'River tests'], ['sewage', 'Sewage'], ['status', 'Water status']].map(function (g) { return '<button type="button" id="land_' + g[0] + '" data-land="' + g[0] + '" aria-pressed="' + (landMode() === g[0]) + '">' + g[1] + '</button>'; }).join('') + '</div>';
 }
 function landPanel() {
 var h = '', m = landMode();
 if (m === 'srp' || m === 'sewage' || m === 'status') return waterPanel(m);
+if (m === 'sources') return sourcesPanel();
 if (!LAND) return '<p class="small">Loading the land data from DAERA. If this message stays, the service is not answering just now.</p>';
 if (m === 'basins') {
 if (!LAND.basins) return '<p class="small">The basin outlines could not be loaded just now.</p>';
@@ -503,12 +592,12 @@ function chip(attr, val, label, pressed, disabled) {
 return '<button type="button" class="chip" id="chip_' + attr + '_' + val + '" data-' + attr + '="' + val + '" aria-pressed="' + !!pressed + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
 }
 function layersHtml() {
-var O = state.on, missing = { basins: !LAYERS.basins, farms: !LAYERS.farms, algae: !LAYERS.algae, buoys: !LAYERS.buoys, works: !LAYERS.works, fields: !fieldsLayer, incidents: !LAYERS.incidents, status: !LAYERS.status, srp: !LAYERS.srp, overflows: !LAYERS.overflows };
+var O = state.on, missing = { basins: !LAYERS.basins, farms: !LAYERS.farms, algae: !LAYERS.algae, buoys: !LAYERS.buoys, works: !LAYERS.works, fields: !fieldsLayer, incidents: !LAYERS.incidents, status: !LAYERS.status, sources: !LAYERS.sources, srp: !LAYERS.srp, overflows: !LAYERS.overflows };
 return '<div class="lrow"><span class="llab">View</span>' +
 [['map', 'Map'], ['sat', 'Satellite'], ['daily', 'Daily photo']].map(function (g) { return chip('base', g[0], g[1], state.base === g[0]); }).join('') +
 (state.base === 'daily' ? '<input type="date" id="satDate" aria-label="Date of the daily photo" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '">' : '') + '</div>' +
 '<div class="lrow"><span class="llab">Shade by</span>' +
-[['none', 'Nothing'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['basins', 'Basins'], ['status', 'Water status'], ['sup', 'Surface geology'], ['bed', 'Bedrock']].map(function (g) { return chip('shade', g[0], g[1], state.shade === g[0], missing[g[0]]); }).join('') + '</div>' +
+[['none', 'Nothing'], ['sources', 'Likely sources'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['basins', 'Basins'], ['status', 'Water status'], ['sup', 'Surface geology'], ['bed', 'Bedrock']].map(function (g) { return chip('shade', g[0], g[1], state.shade === g[0], missing[g[0]]); }).join('') + '</div>' +
 '<div class="lrow"><span class="llab">Show</span>' +
 [['zones', 'Bloom risk'], ['algae', 'Confirmed algae'], ['buoys', 'Buoys'], ['rivers', 'River loads'], ['srp', 'River phosphorus tests'], ['works', 'Treatment works'], ['overflows', 'Storm overflows'], ['incidents', 'Pollution incidents'], ['fields', 'Field risk'], ['stake', 'Places at stake']].map(function (g) { return chip('on', g[0], g[1], O[g[0]], missing[g[0]]); }).join('') + '</div>';
 }
@@ -519,6 +608,7 @@ if (state.base === 'sat') c.push('<span>Satellite: Sentinel-2 cloudless 2024, a 
 if (state.base === 'daily') c.push('<span>Daily photo for ' + fmtDate(state.satDate) + ' ' + state.satDate.slice(0, 4) + ', NASA Terra. Coarse, and cloud often hides the lough.</span>');
 if (sh === 'sup' || sh === 'bed') c.push('<span>' + (sh === 'sup' ? 'Surface geology' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>');
 if (sh === 'basins') c.push('<span class="key">Phosphorus per hectare a year: 0.8 kg ' + OCHRE.map(function (x) { return sw(x); }).join('') + ' 1.2 kg</span><span class="key">' + sw('#9aa3a8') + 'Drains elsewhere</span>');
+if (sh === 'sources') c.push('<span class="key">Phosphorus measured in each basin\'s rivers: lowest ' + VIOLETS.map(function (x) { return sw(x); }).join('') + ' highest</span><span>Tap a basin to see its pressures.</span>');
 if (sh === 'status') c.push('<span class="key">Water status 2018: ' + ['HIGH', 'GOOD', 'MODERATE', 'POOR', 'BAD'].map(function (k) { return sw(WFD[k][1]) + WFD[k][0]; }).join(' ') + '</span><span>Dashed outline: fails on phosphorus alone</span>');
 if (O.srp && WATER && WATER.srp && WATER.srp.length) { var sb = srpBreaks(); c.push('<span class="key">Dissolved phosphorus in rivers, 2020 to 2024: under ' + sb[0].toFixed(2) + ' ' + VIOLETS.map(function (x) { return sw(x, true); }).join('') + ' over ' + sb[3].toFixed(2) + ' mg/l</span>'); }
 if (O.overflows) c.push('<span class="key">' + sw('#bf3528', true) + 'Storm overflow, unsatisfactory</span><span class="key">' + sw('#4f6b7a', true) + 'Other storm overflow</span>');
@@ -548,6 +638,8 @@ showLayer(GEO.sup, sh === 'sup'); showLayer(GEO.bed, sh === 'bed');
 showLayer(LAYERS.basins, sh === 'basins'); showLayer(LAYERS.farms, sh === 'farms'); showLayer(GEO.cover, sh === 'cover');
 if (sh === 'farms' && LAYERS.farms) LAYERS.farms.setStyle(farmStyle);
 showLayer(LAYERS.incidents, !!O.incidents);
+if (LAYERS.sources) { LAYERS.sources.setStyle(sourceStyle); showLayer(LAYERS.sources, sh === 'sources'); }
+if (MAP && LAYERS.sources && (sh === 'sources') !== wasSources) { wasSources = sh === 'sources'; MAP.closePopup(); MAP.fitBounds(wasSources ? LAYERS.sources.getBounds() : BOUNDS); }
 showLayer(LAYERS.status, sh === 'status'); showLayer(LAYERS.failing, sh === 'status');
 showLayer(LAYERS.srp, !!O.srp); showLayer(LAYERS.overflows, !!O.overflows);
 updateFields();
@@ -575,7 +667,7 @@ function loadLand() {
 if (!window.fetch) return;
 fetch('/api/land').then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) return;
-LAND = j; buildLand(); render();
+LAND = j; buildLand(); buildSources(); render();
 }).catch(function () {});
 }
 function loadWater() {
@@ -583,6 +675,16 @@ if (!window.fetch) return;
 fetch('/api/water').then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok) return;
 WATER = j; buildWater(); render();
+}).catch(function () {});
+}
+function loadSources() {
+if (!window.fetch) return;
+fetch('/api/sources').then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok || !j.basins || !j.basins.length) return;
+/* The lough shore basin's outline includes the lough itself, so take the 383 square km of water off its area. */
+j.basins.forEach(function (x) { if (x.name === 'Lough Neagh' && x.km2 > 600) x.km2 -= 383; });
+SOURCES = j; if (!j.basins.some(function (x) { return x.name === state.basin; })) state.basin = j.basins[0].name;
+buildSources(); render();
 }).catch(function () {});
 }
 function loadLive() {
@@ -609,6 +711,7 @@ else if (t.dataset.shade) state.shade = t.dataset.shade;
 else if (t.dataset.on) state.on[t.dataset.on] = !state.on[t.dataset.on];
 else if (t.dataset.land) setLand(t.dataset.land);
 else if (t.dataset.stock) state.stock = t.dataset.stock;
+else if (t.dataset.basin) state.basin = t.dataset.basin;
 else if (t.dataset.goto) { if (MAP) { if (t.dataset.goto === 'all') MAP.fitBounds(BOUNDS); else MAP.setView([GOTO[+t.dataset.goto][1], GOTO[+t.dataset.goto][2]], 13.5); } return; }
 else if (t.dataset.step != null) { state.step = +t.dataset.step; preset(); }
 else if (t.dataset.day != null) state.day = +t.dataset.day;
@@ -631,6 +734,7 @@ loadLive();
 loadData();
 loadLand();
 loadWater();
+loadSources();
 }
 start();
 })();
