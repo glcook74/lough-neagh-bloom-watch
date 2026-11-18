@@ -50,7 +50,10 @@ var STOCK = { cattle: ['Cattle', 'TotalNumberofCattle', 1], sheep: ['Sheep', 'To
 var REDS = ['#f6d9d3', '#eaa79b', '#d97464', '#bf3528', '#7f1d14'];
 var CLC = 'https://image.discomap.eea.europa.eu/arcgis/services/Corine/CLC2018_WM/MapServer/WMSServer';
 function stockPerHa(p) { var k = STOCK[state.stock]; return p.TotalAreaFarmedInHa > 0 ? (p[k[1]] || 0) * k[2] / p.TotalAreaFarmedInHa : 0; }
-function farmStyle(f) { var fr = farmRange(); return { color: '#ffffff', weight: 1.5, fillColor: ramp(stockPerHa(f.properties), fr[0], fr[1] + 0.0001, BLUES), fillOpacity: 0.7 }; }
+/* Shade by rank, a fifth of the areas in each colour, so one extreme area cannot wash out all the others. */
+function farmBreaks() { var v = LAND.farms.features.map(function (f) { return stockPerHa(f.properties); }).sort(function (a, b) { return a - b; }); return [0.2, 0.4, 0.6, 0.8].map(function (q) { return v[Math.min(v.length - 1, Math.floor(q * v.length))]; }); }
+function farmStyle(f) { var br = farmBreaks(), v = stockPerHa(f.properties), i = 0; while (i < br.length && v >= br[i]) i++; return { color: '#ffffff', weight: 1.5, fillColor: BLUES[i], fillOpacity: 0.7 }; }
+function farmTop() { var best = null; LAND.farms.features.forEach(function (f) { if (!best || stockPerHa(f.properties) > stockPerHa(best)) best = f.properties; }); return best; }
 function incidentColour(n) { return REDS[n >= 16 ? 4 : n >= 8 ? 3 : n >= 4 ? 2 : n >= 2 ? 1 : 0]; }
 function slurryHtml() {
 var now = new Date(), m = now.getMonth() + 1, d = now.getDate();
@@ -336,13 +339,13 @@ if (!LAND.farms) return '<p class="small">The farm census could not be loaded ju
 var T = { farms: 0, area: 0, crops: 0, grass: 0, cattle: 0, sheep: 0, pigs: 0, poultry: 0 };
 LAND.farms.features.forEach(function (f) { var p = f.properties; T.farms += p.NumberOfFarms || 0; T.area += p.TotalAreaFarmedInHa || 0; T.crops += p.TotalCrops || 0; T.grass += p.TotalGrassRGrazingHa || 0; T.cattle += p.TotalNumberofCattle || 0; T.sheep += p.TotalNumberofsheep || 0; T.pigs += p.TotalNumberOfPigs || 0; T.poultry += (p.TotalNumberOfPoultry000 || 0) * 1000; });
 var gp = T.grass + T.crops > 0 ? T.grass / (T.grass + T.crops) * 100 : 0;
-h += '<p>Of the land farmed around the lough, ' + gp.toFixed(0) + '% is grass and rough grazing and ' + (100 - gp).toFixed(0) + '% is crops. The map shades each area by how many animals it has for every hectare farmed.</p>' +
+h += '<p>Of the land farmed around the lough, ' + gp.toFixed(0) + '% is grass and rough grazing and ' + (100 - gp).toFixed(0) + '% is crops. The map shades each area by how many animals it has for every hectare farmed, a fifth of the areas in each shade.</p>' +
 '<div class="seg" role="group" aria-label="Animal to shade the map by">' + ['cattle', 'sheep', 'pigs', 'poultry'].map(function (k) { return '<button type="button" id="stock_' + k + '" data-stock="' + k + '" aria-pressed="' + (state.stock === k) + '">' + STOCK[k][0] + '</button>'; }).join('') + '</div>' +
 '<dl class="facts">' +
 '<div><dt>Farms</dt><dd>' + nf(T.farms) + '</dd></div><div><dt>Land farmed</dt><dd>' + nf(T.area) + ' ha</dd></div>' +
 '<div><dt>Cattle</dt><dd>' + nf(T.cattle) + '</dd></div><div><dt>Sheep</dt><dd>' + nf(T.sheep) + '</dd></div>' +
 '<div><dt>Pigs</dt><dd>' + nf(T.pigs) + '</dd></div><div><dt>Poultry</dt><dd>' + nf(T.poultry) + '</dd></div>' +
-'</dl><p class="small">DAERA farm census 2019, added up over the ' + LAND.farms.features.length + ' district electoral areas that touch the map. These follow council boundaries, not river basins, so some of this land drains elsewhere. Tap an area for its own figures.</p>' + slurryHtml();
+'</dl>' + (function () { var p = farmTop(), k = STOCK[state.stock]; return p ? '<p>The highest is ' + esc(tidyName(p.DEAName)) + ', with ' + nf((p[k[1]] || 0) * k[2]) + ' ' + k[0].toLowerCase() + ' on ' + nf(p.TotalAreaFarmedInHa) + ' hectares of farmland, which is ' + stockPerHa(p).toFixed(1) + ' per hectare.' + (p.TotalAreaFarmedInHa < 2000 ? ' It has very little farmland, so its figure per hectare is far above the rest.' : '') + '</p>' : ''; })() + '<p class="small">DAERA farm census 2019, added up over the ' + LAND.farms.features.length + ' district electoral areas that touch the map. These follow council boundaries, not river basins, so some of this land drains elsewhere. Tap an area for its own figures.</p>' + slurryHtml();
 } else if (m === 'cover') {
 h += '<p>This is how the land is used, mapped from satellite images by the European Copernicus programme. Around the lough it is mostly pasture, with towns, peat bog and some arable land.</p>' +
 '<div class="legend">' + [['#e6e64d', 'Pasture'], ['#ffffa8', 'Arable'], ['#ffe64d', 'Mixed farmland'], ['#ff0000', 'Towns'], ['#4d4dff', 'Peat bog'], ['#00a600', 'Woodland'], ['#80f2e6', 'Water']].map(function (k) { return '<span class="key"><span class="sw" style="background:' + k[0] + '"></span>' + k[1] + '</span>'; }).join('') + '</div>' +
@@ -521,7 +524,7 @@ if (O.srp && WATER && WATER.srp && WATER.srp.length) { var sb = srpBreaks(); c.p
 if (O.overflows) c.push('<span class="key">' + sw('#bf3528', true) + 'Storm overflow, unsatisfactory</span><span class="key">' + sw('#4f6b7a', true) + 'Other storm overflow</span>');
 if (sh === 'cover') c.push('<span>Land cover: Corine 2018, Copernicus. Yellow-green is pasture, pale yellow arable, red towns, blue-violet peat bog, green woodland.</span>');
 if (O.incidents) c.push('<span class="key">Pollution incidents per square km, 2011 to 2024: 1 ' + REDS.map(function (x) { return sw(x); }).join('') + ' 16 or more</span>');
-if (sh === 'farms' && LAND && LAND.farms) c.push('<span class="key">' + STOCK[state.stock][0] + ' per hectare farmed, 2019: ' + farmRange()[0].toFixed(1) + ' ' + BLUES.map(function (x) { return sw(x); }).join('') + ' ' + farmRange()[1].toFixed(1) + '</span>');
+if (sh === 'farms' && LAND && LAND.farms) c.push('<span class="key">' + STOCK[state.stock][0] + ' per hectare farmed, 2019: fewest ' + BLUES.map(function (x) { return sw(x); }).join('') + ' most</span><span>Middle area: ' + farmBreaks()[1].toFixed(1) + ' to ' + farmBreaks()[2].toFixed(1) + ' per hectare</span>');
 if (O.fields) c.push('<span class="key">Field risk: ' + [1, 2, 3].map(function (k) { return sw(RISK[k][1]) + RISK[k][0]; }).join(' ') + '</span>');
 if (O.zones) c.push('<span class="key">Bloom risk ' + (s === 5 ? 'on day ' + (state.day + 1) : s === 6 ? 'at worst in 5 days' : 'today') + ': ' + sw('var(--low)') + 'L ' + sw('var(--med)') + 'M ' + sw('var(--high)') + 'H</span>');
 if (O.algae) c.push('<span class="key">' + sw('#b0206a', true) + 'Confirmed algae, last 12 months</span>');
