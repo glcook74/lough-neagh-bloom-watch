@@ -109,8 +109,8 @@ table.src th[scope="row"] { white-space: normal; font-size: 0.8rem; }
 table.src td { text-align: right; padding-right: 10px; }
 table.src thead th:not(.lh) { text-align: right; padding-right: 10px; }
 .notes { padding-left: 1.1rem; margin: 0; font-size: 0.86rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; max-width: 62ch; }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-.tab { padding: 10px 16px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.tabs { overflow-x: auto; display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab { white-space: nowrap; padding: 10px 14px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; }
 .tab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
 .analysis { min-width: 0; }
 #analysisBody { display: flex; flex-direction: column; gap: 14px; }
@@ -220,3 +220,22 @@ footer a { color: var(--accent); }
 .hottxt .sub { display: block; font-size: 0.8rem; color: var(--muted); }
 .hotitem .val { font-family: var(--mono); font-size: 0.82rem; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .lrow select { max-width: 100%; }
+/* satellite analysis */
+#satBody { display: flex; flex-direction: column; gap: 14px; }
+#satBody h3 { font-family: var(--display); font-size: 1.1rem; margin-top: 10px; }
+#satBody p { max-width: 70ch; }
+#satBody .layers { padding: 0; }
+.satchart { max-width: 760px; }
+.satchart .legend { padding: 6px 6px 0; }
+.satgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; max-width: 520px; }
+.satcell { min-width: 0; min-height: 92px; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+.satname { font-size: 0.74rem; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.satval { font-family: var(--mono); font-size: 1.15rem; font-weight: 500; margin-top: auto; }
+.satn { font-size: 0.7rem; opacity: 0.9; }
+table.sat th[scope="row"] { white-space: normal; min-width: 8.5rem; font-size: 0.82rem; }
+table.sat td { padding: 3px 2px; min-width: 3rem; }
+table.sat td .cell { color: inherit; }
+table.sat tr.tot th, table.sat tr.tot td { border-top: 2px solid var(--line); padding-top: 6px; }
+table.sat.days td { font-family: var(--mono); font-size: 0.8rem; padding: 6px 8px; }
+table.sat.days td.lh, table.sat th.lh { text-align: left; font-family: var(--body); }
+table.sat.days th[scope="row"] { white-space: nowrap; min-width: 0; }

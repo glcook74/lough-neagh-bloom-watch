@@ -833,13 +833,146 @@ if (!j || !j.ok || !j.sites) { HOTFAIL = true; } else HOT = j;
 showView();
 }).catch(function () { HOTFAIL = true; showView(); });
 }
+/* ---------- satellite analysis: the algae index through time, in nine areas ---------- */
+var SAT = { zones: null, days: {}, done: 0, total: 0, failed: 0, started: false }, satOff = {}, satMetric = 'm';
+var SATCOL = { 2023: '#b05fc4', 2024: '#3b8fd9', 2025: '#e07b39', 2026: '#2f9e6b', 2027: '#c44569' };
+var NDCI_STOPS = [[-0.15, [20, 48, 115]], [0, [41, 128, 184]], [0.1, [115, 194, 115]], [0.2, [245, 227, 66]], [0.35, [237, 128, 31]], [0.5, [189, 26, 31]]];
+function rampColour(v) {
+var s = NDCI_STOPS, c = s[s.length - 1][1];
+if (v <= s[0][0]) c = s[0][1]; else for (var i = 1; i < s.length; i++) if (v <= s[i][0]) { var a = s[i - 1], b = s[i], k = (v - a[0]) / (b[0] - a[0]); c = [0, 1, 2].map(function (q) { return a[1][q] + (b[1][q] - a[1][q]) * k; }); break; }
+var lum = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
+return { bg: 'rgb(' + c.map(Math.round).join(',') + ')', fg: lum > 0.6 ? '#10262e' : '#ffffff' };
+}
+/* The share of water above 0.1 runs from 0 to 1, so stretch it over the same colours. */
+function satColour(v) { return rampColour(satMetric === 'm' ? v : -0.15 + v * 0.65); }
+function satFmt(v) { return v == null ? '' : satMetric === 'm' ? (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) : Math.round(v * 100) + '%'; }
+function loadSat() {
+if (SAT.started || !window.fetch) return; SAT.started = true;
+var jobs = [], yr = new Date().getUTCFullYear();
+for (var y = yr; y >= 2023; y--) { jobs.push([y, 2]); jobs.push([y, 1]); }
+SAT.total = jobs.length;
+var next = function () {
+var job = jobs.shift(); if (!job) return;
+fetch('/api/satstats?year=' + job[0] + '&half=' + job[1]).then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok) SAT.failed++; else { if (j.zones) SAT.zones = j.zones; j.days.forEach(function (d) { SAT.days[d.date] = d.z; }); }
+}).catch(function () { SAT.failed++; }).then(function () { SAT.done++; if (location.hash === '#satellite') renderSat(); next(); });
+};
+next(); next(); next();
+}
+/* Keep an area for a day only if at least 30% of its water was clear, and a whole-lough figure only if 40% was. */
+function satModel() {
+var dates = Object.keys(SAT.days).sort(), zmax = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+dates.forEach(function (d) { SAT.days[d].forEach(function (z, k) { if (z && z[2] > zmax[k]) zmax[k] = z[2]; }); });
+var all = zmax.reduce(function (a, b) { return a + b; }, 0);
+return dates.map(function (d) {
+var n = 0, m = 0, hh = 0, z = SAT.days[d].map(function (x, k) { if (!x || x[2] < 0.3 * zmax[k]) return null; n += x[2]; m += x[0] * x[2]; hh += x[1] * x[2]; return { m: x[0], h: x[1] }; });
+return { date: d, year: +d.slice(0, 4), month: +d.slice(5, 7), z: z, lough: n >= 0.4 * all ? { m: m / n, h: hh / n } : null };
+});
+}
+function doy(date) { return (Date.parse(date + 'T00:00:00Z') - Date.UTC(+date.slice(0, 4), 0, 1)) / 86400000; }
+function avg(list) { return list.length ? list.reduce(function (a, b) { return a + b; }, 0) / list.length : null; }
+function satChart(rows, years) {
+var W = 560, H = 300, L = 46, Rr = 12, T = 12, B = 34, key = satMetric;
+var pts = rows.filter(function (r) { return r.lough && years.indexOf(r.year) >= 0; });
+var lo = key === 'm' ? Math.min(-0.1, Math.min.apply(null, pts.map(function (p) { return p.lough.m; }))) : 0, hi = key === 'm' ? Math.max(0.3, Math.max.apply(null, pts.map(function (p) { return p.lough.m; }))) : 1;
+if (key === 'm') { lo = Math.floor(lo * 10) / 10; hi = Math.ceil(hi * 10) / 10; }
+var X = function (d) { return L + (W - L - Rr) * d / 365; }, Y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Algae index through the year, one line for each year"><g font-family="var(--body)" font-size="13" fill="var(--muted)">';
+var step = key === 'm' ? 0.1 : 0.25;
+for (var v = lo; v <= hi + 1e-9; v += step) s += '<line x1="' + L + '" x2="' + (W - Rr) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 6) + '" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end">' + (key === 'm' ? v.toFixed(1) : Math.round(v * 100) + '%') + '</text>';
+var starts = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+starts.forEach(function (d, k) { s += '<text x="' + X(d + 15).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle">' + MONN[k].charAt(0) + '</text>' + (k ? '<line x1="' + X(d).toFixed(1) + '" x2="' + X(d).toFixed(1) + '" y1="' + (H - B) + '" y2="' + (H - B + 5) + '" stroke="var(--line)"/>' : ''); });
+if (key === 'm') s += '<line x1="' + L + '" x2="' + (W - Rr) + '" y1="' + Y(0.1).toFixed(1) + '" y2="' + Y(0.1).toFixed(1) + '" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>';
+s += '</g>';
+years.slice().sort().forEach(function (y) {
+var p = pts.filter(function (q) { return q.year === y; }), col = SATCOL[y] || '#888888';
+if (!p.length) return;
+s += '<polyline fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" opacity="0.75" points="' + p.map(function (q) { return X(doy(q.date)).toFixed(1) + ',' + Y(q.lough[key]).toFixed(1); }).join(' ') + '"/>';
+p.forEach(function (q) { s += '<circle cx="' + X(doy(q.date)).toFixed(1) + '" cy="' + Y(q.lough[key]).toFixed(1) + '" r="3.2" fill="' + col + '" stroke="var(--surface)" stroke-width="1"><title>' + fmtDate(q.date) + ' ' + y + ': ' + satFmt(q.lough[key]) + '</title></circle>'; });
+});
+return s + '</svg>';
+}
+function satHtml() {
+var rows = satModel(), allYears = [], N = SAT.zones.length;
+rows.forEach(function (r) { if (allYears.indexOf(r.year) < 0) allYears.push(r.year); });
+allYears.sort();
+var years = allYears.filter(function (y) { return !satOff[y]; });
+if (!years.length) { satOff = {}; years = allYears.slice(); }
+var use = rows.filter(function (r) { return years.indexOf(r.year) >= 0; }), lough = use.filter(function (r) { return r.lough; });
+var season = function (r) { return r.month >= 6 && r.month <= 10; }, key = satMetric;
+var h = '<h2>What the satellite shows</h2><p class="lede">Every clear Sentinel-2 pass over the lough since 2023, turned into an algae index for nine areas so the patterns by season, year and place can be compared.</p>' +
+'<p class="notice"><strong>An index, not a measurement.</strong> It is worked out from the colour of the water and has not been checked against water samples. Use it to compare days and places, not to say how much algae there was.</p>';
+if (SAT.done < SAT.total) h += '<p class="small" role="status">Loaded ' + SAT.done + ' of ' + SAT.total + ' half-years. The figures below will fill in.</p>';
+if (SAT.failed) h += '<p class="small">' + SAT.failed + ' of the ' + SAT.total + ' half-years could not be loaded, so some dates are missing.</p>';
+/* findings */
+var f = [], seasonL = lough.filter(season);
+f.push('<strong>' + lough.length + ' usable days</strong> out of ' + use.length + ' satellite passes. The rest had too much cloud over the water.');
+if (lough.length) {
+var peak = lough.slice().sort(function (a, b) { return b.lough.m - a.lough.m; })[0];
+f.push('<strong>The highest day was ' + fmtDate(peak.date) + ' ' + peak.year + '</strong>, with an average index of ' + peak.lough.m.toFixed(2) + ' and ' + Math.round(peak.lough.h * 100) + '% of the clear water above 0.1.');
+var byYear = years.map(function (y) { var p = seasonL.filter(function (r) { return r.year === y; }); return { y: y, n: p.length, mean: avg(p.map(function (r) { return r.lough.m; })), high: p.filter(function (r) { return r.lough.h >= 0.5; }).length }; }).filter(function (x) { return x.n; });
+if (byYear.length > 1) { var top = byYear.slice().sort(function (a, b) { return b.mean - a.mean; })[0]; f.push('<strong>' + top.y + ' had the highest June to October average</strong> (' + top.mean.toFixed(2) + ' over ' + top.n + ' usable days). Days when more than half the water was above 0.1: ' + byYear.map(function (x) { return x.y + ': ' + x.high + ' of ' + x.n; }).join(', ') + '.'); }
+var byMonth = []; for (var mo = 1; mo <= 12; mo++) { var pm = lough.filter(function (r) { return r.month === mo; }); if (pm.length >= 2) byMonth.push({ mo: mo, mean: avg(pm.map(function (r) { return r.lough.m; })), n: pm.length }); }
+if (byMonth.length) { var tm = byMonth.slice().sort(function (a, b) { return b.mean - a.mean; })[0]; f.push('<strong>' + MONFULL[tm.mo - 1] + ' is the highest month on average</strong> (' + tm.mean.toFixed(2) + ' over ' + tm.n + ' usable days).'); }
+}
+var zs = SAT.zones.map(function (z, k) { var p = use.filter(function (r) { return season(r) && r.z[k]; }); return { z: z, k: k, n: p.length, m: avg(p.map(function (r) { return r.z[k].m; })), h: avg(p.map(function (r) { return r.z[k].h; })) }; });
+var zr = zs.filter(function (x) { return x.n >= 3; }).sort(function (a, b) { return b.m - a.m; });
+if (zr.length > 1) f.push('<strong>' + zr[0].z.name + '</strong> has the highest June to October average (' + zr[0].m.toFixed(2) + ') and <strong>' + zr[zr.length - 1].z.name + '</strong> the lowest (' + zr[zr.length - 1].m.toFixed(2) + ').');
+var highDays = use.filter(function (r) { return r.lough && r.lough.h >= 0.5; }), lead = {};
+highDays.forEach(function (r) { var best = -1; r.z.forEach(function (z, k) { if (z && (best < 0 || z.m > r.z[best].m)) best = k; }); if (best >= 0) lead[best] = (lead[best] || 0) + 1; });
+var lk = Object.keys(lead).sort(function (a, b) { return lead[b] - lead[a]; })[0];
+if (lk != null && highDays.length >= 3) f.push('On the ' + highDays.length + ' days when more than half the water was above 0.1, <strong>' + SAT.zones[lk].name + '</strong> was the highest area most often (' + lead[lk] + ' times).');
+h += '<h3>What stands out</h3><ul class="finds">' + f.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>';
+/* controls */
+h += '<div class="layers"><div class="lrow"><span class="llab">Years</span>' + allYears.map(function (y) { return chip('saty', y, y, years.indexOf(y) >= 0); }).join('') + '</div>' +
+'<div class="lrow"><span class="llab">Measure</span>' + chip('satm', 'm', 'Average index', key === 'm') + chip('satm', 'h', 'Share of water above 0.1', key === 'h') + '</div></div>';
+/* chart */
+h += '<h3>Through the year</h3><p class="small">The whole lough, one dot for each usable day. ' + (key === 'm' ? 'Above the dashed line at 0.1 the water shows yellow to red on the map.' : 'The share of clear water above 0.1 on the index.') + '</p>' +
+'<div class="chart satchart">' + satChart(rows, years) + '<div class="legend">' + years.map(function (y) { return '<span class="key"><span class="sw dot" style="background:' + (SATCOL[y] || '#888888') + '"></span>' + y + '</span>'; }).join('') + '</div></div>';
+/* grid of areas */
+h += '<h3>Where it is highest</h3><p class="small">June to October average for each area, laid out as on a map with north at the top. Each area is a box, so it includes some open water as well as the named shore.</p><div class="satgrid">' + zs.map(function (x) {
+var v = x.n ? x[key] : null, col = v == null ? null : satColour(v);
+return '<div class="satcell"' + (col ? ' style="background:' + col.bg + ';color:' + col.fg + '"' : '') + '><span class="satname">' + x.z.name + '</span><span class="satval">' + (v == null ? 'No clear days' : satFmt(v)) + '</span><span class="satn">' + (x.n ? x.n + ' days' : '') + '</span></div>';
+}).join('') + '</div>';
+/* heat map by month */
+var cell = function (list) { if (list.length < 1) return '<td></td>'; var v = avg(list), col = satColour(v); return '<td><span class="cell" style="background:' + col.bg + ';color:' + col.fg + '" title="' + list.length + ' days">' + satFmt(v) + '</span></td>'; };
+h += '<h3>Area by month</h3><p class="small">Average for each area in each month, across the years chosen. Blank means no clear day. Winter figures are less reliable because the sun is low.</p><div class="tablewrap"><table class="sat"><thead><tr><th class="lh" scope="col">Area</th>' + MONN.map(function (m) { return '<th scope="col">' + m + '</th>'; }).join('') + '</tr></thead><tbody>' +
+SAT.zones.map(function (z, k) { var t = '<tr><th scope="row">' + z.name + '</th>'; for (var mo = 1; mo <= 12; mo++) t += cell(use.filter(function (r) { return r.month === mo && r.z[k]; }).map(function (r) { return r.z[k][key]; })); return t + '</tr>'; }).join('') +
+(function () { var t = '<tr class="tot"><th scope="row">Whole lough</th>'; for (var mo = 1; mo <= 12; mo++) t += cell(lough.filter(function (r) { return r.month === mo; }).map(function (r) { return r.lough[key]; })); return t + '</tr>'; })() + '</tbody></table></div>';
+/* top days */
+var topDays = lough.slice().sort(function (a, b) { return b.lough[key] - a.lough[key]; }).slice(0, 12);
+h += '<h3>The highest days</h3><p class="small">Open any of these on the main map to see the picture behind the number.</p><div class="tablewrap"><table class="sat days"><thead><tr><th class="lh" scope="col">Day</th><th scope="col">Average index</th><th scope="col">Water above 0.1</th><th class="lh" scope="col">Highest area</th><th scope="col"></th></tr></thead><tbody>' + topDays.map(function (r) {
+var best = -1; r.z.forEach(function (z, k) { if (z && (best < 0 || z.m > r.z[best].m)) best = k; });
+return '<tr><th scope="row">' + fmtDate(r.date) + ' ' + r.year + '</th><td>' + r.lough.m.toFixed(2) + '</td><td>' + Math.round(r.lough.h * 100) + '%</td><td class="lh">' + (best < 0 ? '' : SAT.zones[best].name) + '</td><td><button type="button" class="chip" data-satgo="' + r.date + '">See on map</button></td></tr>';
+}).join('') + '</tbody></table></div>';
+h += '<h3>How to read this</h3><ul class="notes">' +
+'<li>The index is the Normalised Difference Chlorophyll Index. It compares two shades of red light that algae pigment reflects differently. Higher means greener, more pigmented water.</li>' +
+'<li>The 0.1 line is a working threshold chosen for this page, not an official one.</li>' +
+'<li>The satellite passes every two to three days and cloud hides most passes, so short blooms can be missed entirely.</li>' +
+'<li>Thick floating scum, haze, thin cloud and sunlight glinting off the water can all push the index up or down. A single odd day is not a pattern.</li>' +
+'<li>Mud stirred up by wind can also raise the index in shallow bays.</li>' +
+'<li>Each area is measured at about 115 m detail, so narrow bays and harbours are not resolved.</li></ul>';
+return h;
+}
+var MONFULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function renderSat() {
+var el = $('satBody'); if (!el) return;
+loadSat();
+if (!SAT.zones || !Object.keys(SAT.days).length) { el.innerHTML = '<p class="small" role="status">' + (SAT.total && SAT.done === SAT.total ? 'The satellite figures are not available right now. Please try again in a few minutes.' : 'Measuring the algae index from every clear satellite pass since 2023. The first time this can take up to a minute.') + '</p>'; return; }
+el.innerHTML = satHtml();
+}
+function satGo(date) {
+state.base = 's2'; state.s2algae = true; state.s2year = date.slice(0, 4); state.s2date = date;
+location.hash = '#explore'; render();
+if ($('map')) $('map').scrollIntoView({ block: 'center' });
+}
 function showView() {
-var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : 'Map';
-['Map', 'Analysis', 'Areas'].forEach(function (n) {
+var v = location.hash === '#analysis' ? 'Analysis' : location.hash === '#areas' ? 'Areas' : location.hash === '#satellite' ? 'Satellite' : 'Map';
+['Map', 'Analysis', 'Areas', 'Satellite'].forEach(function (n) {
 $('view' + n).hidden = n !== v;
 if (n === v) $('tab' + n).setAttribute('aria-current', 'page'); else $('tab' + n).removeAttribute('aria-current');
 });
-if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (MAP) MAP.invalidateSize();
+if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (v === 'Satellite') renderSat(); else if (MAP) MAP.invalidateSize();
 }
 /* ---------- Sentinel-2 pictures for a chosen day ---------- */
 var S2BOX = [[54.42, -6.78], [54.82, -6.06]], S2DAYS = {}, S2IMG = {}, S2STATE = { 'true': '', algae: '' };
@@ -853,7 +986,7 @@ S2DAYS[key] = 'loading';
 fetch('/api/sat?list=1' + (key ? '&year=' + key : '')).then(function (res) { return res.json(); }).then(function (j) {
 if (!j || !j.ok || !j.days) { S2DAYS[key] = 'fail'; render(); return; }
 S2DAYS[key] = j.days;
-if (key === state.s2year && !s2Day()) { var clear = j.days.filter(function (x) { return x.cloud <= 20; })[0] || j.days[0]; state.s2date = clear ? clear.date : null; }
+if (key === state.s2year && !state.s2date) { var clear = j.days.filter(function (x) { return x.cloud <= 20; })[0] || j.days[0]; state.s2date = clear ? clear.date : null; }
 render();
 }).catch(function () { S2DAYS[key] = 'fail'; render(); });
 }
@@ -880,7 +1013,7 @@ var h = '<div class="lrow"><span class="llab">Satellite day</span><select id="s2
 if (!d || d === 'loading') h += '<span class="small">Finding clear days.</span>';
 else if (d === 'fail') h += '<span class="small">The satellite service is not answering right now.</span>';
 else if (!d.length) h += '<span class="small">No clear days in this period.</span>';
-else h += '<select id="s2date" aria-label="Day of the satellite picture">' + d.map(function (x) { return '<option value="' + x.date + '"' + (x.date === state.s2date ? ' selected' : '') + '>' + fmtDate(x.date) + ' ' + x.date.slice(0, 4) + ' · ' + x.cloud + '% cloud</option>'; }).join('') + '</select>';
+else h += '<select id="s2date" aria-label="Day of the satellite picture">' + (state.s2date && !s2Day() ? '<option value="' + state.s2date + '" selected>' + fmtDate(state.s2date) + ' ' + state.s2date.slice(0, 4) + '</option>' : '') + d.map(function (x) { return '<option value="' + x.date + '"' + (x.date === state.s2date ? ' selected' : '') + '>' + fmtDate(x.date) + ' ' + x.date.slice(0, 4) + ' · ' + x.cloud + '% cloud</option>'; }).join('') + '</select>';
 return h + '</div>';
 }
 function s2Caption(c) {
@@ -1009,6 +1142,9 @@ preset();
 document.addEventListener('click', function (e) {
 var t = e.target.closest ? e.target.closest('button') : null;
 if (!t) return;
+if (t.dataset.satgo) { satGo(t.dataset.satgo); return; }
+if (t.dataset.saty) { satOff[t.dataset.saty] = !satOff[t.dataset.saty]; renderSat(); if ($(t.id)) $(t.id).focus({ preventScroll: true }); return; }
+if (t.dataset.satm) { satMetric = t.dataset.satm; renderSat(); if ($(t.id)) $(t.id).focus({ preventScroll: true }); return; }
 if (t.dataset.hotcat) { toggleHot(t.dataset.hotcat); if ($(t.id)) $(t.id).focus({ preventScroll: true }); return; }
 if (t.dataset.hot) { if (t.dataset.hot === 'all') { if (HOTMAP) { HOTMAP.closePopup(); var pp = Object.keys(HOTPIN).map(function (k) { return [HOTPIN[k].it.lat, HOTPIN[k].it.lon]; }); HOTMAP.fitBounds(L.latLngBounds(pp).pad(0.06)); } } else focusHot(t.dataset.hot); return; }
 if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; preset(); }
