@@ -79,7 +79,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .chip { font: inherit; font-size: 0.8rem; line-height: 1.2; padding: 6px 11px; min-height: 34px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
 .chip:disabled { opacity: 0.4; cursor: default; }
-.lrow input[type="date"] { font: inherit; font-size: 0.8rem; padding: 5px 8px; min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.lrow input[type="date"], .lrow select { font: inherit; font-size: 0.8rem; padding: 5px 8px; min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .mapfail { padding: 24px 12px; color: var(--muted); font-size: 0.9rem; }
 .mk { overflow: visible; }
 .zm, .sm { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); font-family: var(--mono); font-size: 11px; font-weight: 500; color: #ffffff; }
@@ -219,3 +219,4 @@ footer a { color: var(--accent); }
 .hottxt strong { font-weight: 600; overflow-wrap: anywhere; }
 .hottxt .sub { display: block; font-size: 0.8rem; color: var(--muted); }
 .hotitem .val { font-family: var(--mono); font-size: 0.82rem; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.lrow select { max-width: 100%; }

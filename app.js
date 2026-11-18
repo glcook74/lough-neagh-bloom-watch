@@ -79,7 +79,7 @@ var LV = ['Low', 'Medium', 'High'];
 var COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 function compass(deg) { return COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
 var YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-var state = { scn: 'B', step: 0, day: 0, base: 'map', satDate: YESTERDAY, shade: 'none', on: {}, stock: 'cattle', basin: 'River Blackwater' };
+var state = { scn: 'B', step: 0, day: 0, base: 'map', satDate: YESTERDAY, s2date: null, s2year: '', s2algae: false, shade: 'none', on: {}, stock: 'cattle', basin: 'River Blackwater' };
 /* Each step of the tour switches on the layers that suit it. The reader can then change them freely. */
 function preset() {
 var s = state.step, live = state.scn === 'L' && !!LIVE;
@@ -117,7 +117,8 @@ return mk('<svg viewBox="-50 -50 100 100" width="96" height="96" style="transfor
 }
 function buildMap() {
 if (!window.L) { $('map').innerHTML = '<p class="mapfail">The map could not load. The rest of the page still works.</p>'; return; }
-MAP = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, minZoom: 8, maxZoom: 15, scrollWheelZoom: false, dragging: !L.Browser.mobile });
+MAP = L.map('map', { zoomSnap: 0.25, zoomDelta: 0.5, minZoom: 8, maxZoom: 17, scrollWheelZoom: false, dragging: !L.Browser.mobile });
+MAP.createPane('s2').style.zIndex = 250; MAP.createPane('s2a').style.zIndex = 260;
 MAP.attributionControl.setPrefix(false);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, zIndex: 1, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(MAP);
 MAP.fitBounds(BOUNDS);
@@ -138,8 +139,9 @@ return L.marker(s.ll, { title: s.n, alt: s.n, icon: mk('<span class="sm ' + s.ty
 LAYERS.zones = L.layerGroup(ZONES.map(function (z) {
 return (zoneMarkers[z.id] = L.marker(ZPOS[z.id][0], { title: z.name, alt: z.name, icon: zoneIcon(z, 0) }));
 }));
-SATS.daily = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg', { date: state.satDate, maxNativeZoom: 9, maxZoom: 15, zIndex: 2, attribution: 'Daily photo: NASA EOSDIS GIBS' });
-SATS.sat = L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg', { maxNativeZoom: 15, maxZoom: 15, zIndex: 2, attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2024)' });
+SATS.daily = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg', { date: state.satDate, maxNativeZoom: 9, maxZoom: 17, zIndex: 2, attribution: 'Daily photo: NASA EOSDIS GIBS' });
+SATS.aerial = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 17, zIndex: 2, attribution: 'Aerial photos: Esri, Maxar, Earthstar Geographics and the GIS user community' });
+SATS.sat = L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg', { maxNativeZoom: 15, maxZoom: 17, zIndex: 2, attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2024)' });
 windMarker = L.marker(CENTRE, { interactive: false, keyboard: false, zIndexOffset: -500, icon: windIcon(0) });
 LAYERS.wind = L.layerGroup([windMarker]);
 }
@@ -839,6 +841,54 @@ if (n === v) $('tab' + n).setAttribute('aria-current', 'page'); else $('tab' + n
 });
 if (v === 'Analysis') renderAnalysis(); else if (v === 'Areas') renderAreas(); else if (MAP) MAP.invalidateSize();
 }
+/* ---------- Sentinel-2 pictures for a chosen day ---------- */
+var S2BOX = [[54.42, -6.78], [54.82, -6.06]], S2DAYS = {}, S2IMG = {}, S2STATE = { 'true': '', algae: '' };
+var S2RAMP = ['#143073', '#2980b8', '#73c273', '#f5e342', '#ed801f', '#bd1a1f'];
+function s2Days() { return S2DAYS[state.s2year]; }
+function s2Wanted() { return state.base === 's2' || state.s2algae; }
+function s2Day() { var d = s2Days(); if (!Array.isArray(d) || !d.length) return null; return d.filter(function (x) { return x.date === state.s2date; })[0] || null; }
+function loadS2Days() {
+var key = state.s2year; if (S2DAYS[key] || !window.fetch) return;
+S2DAYS[key] = 'loading';
+fetch('/api/sat?list=1' + (key ? '&year=' + key : '')).then(function (res) { return res.json(); }).then(function (j) {
+if (!j || !j.ok || !j.days) { S2DAYS[key] = 'fail'; render(); return; }
+S2DAYS[key] = j.days;
+if (key === state.s2year && !s2Day()) { var clear = j.days.filter(function (x) { return x.cloud <= 20; })[0] || j.days[0]; state.s2date = clear ? clear.date : null; }
+render();
+}).catch(function () { S2DAYS[key] = 'fail'; render(); });
+}
+function s2Show(mode, want) {
+var url = '/api/sat?date=' + state.s2date + '&mode=' + mode, img = S2IMG[mode];
+if (!want || !state.s2date || !MAP) { if (img) showLayer(img, false); return; }
+if (!img) {
+img = S2IMG[mode] = L.imageOverlay(url, S2BOX, { pane: mode === 'algae' ? 's2a' : 's2', opacity: mode === 'algae' ? 0.85 : 1, interactive: false, attribution: 'Contains modified Copernicus Sentinel data, processed with Sentinel Hub' });
+img.s2url = url; S2STATE[mode] = 'loading';
+img.on('load', function () { S2STATE[mode] = 'ok'; $('mapcap').innerHTML = captionHtml(state.step); });
+img.on('error', function () { S2STATE[mode] = 'fail'; $('mapcap').innerHTML = captionHtml(state.step); });
+} else if (img.s2url !== url) { img.s2url = url; S2STATE[mode] = 'loading'; img.setUrl(url); }
+showLayer(img, true);
+}
+function updateS2() {
+if (s2Wanted() && !s2Days()) loadS2Days();
+s2Show('true', state.base === 's2'); s2Show('algae', state.s2algae);
+}
+function s2Row() {
+if (!s2Wanted()) return '';
+var d = s2Days(), yr = new Date().getUTCFullYear(), years = [['', 'Last 12 months']];
+for (var y = yr; y >= 2023; y--) years.push([String(y), String(y)]);
+var h = '<div class="lrow"><span class="llab">Satellite day</span><select id="s2year" aria-label="Period">' + years.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === state.s2year ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+if (!d || d === 'loading') h += '<span class="small">Finding clear days.</span>';
+else if (d === 'fail') h += '<span class="small">The satellite service is not answering right now.</span>';
+else if (!d.length) h += '<span class="small">No clear days in this period.</span>';
+else h += '<select id="s2date" aria-label="Day of the satellite picture">' + d.map(function (x) { return '<option value="' + x.date + '"' + (x.date === state.s2date ? ' selected' : '') + '>' + fmtDate(x.date) + ' ' + x.date.slice(0, 4) + ' · ' + x.cloud + '% cloud</option>'; }).join('') + '</select>';
+return h + '</div>';
+}
+function s2Caption(c) {
+var day = s2Day(), when = state.s2date ? fmtDate(state.s2date) + ' ' + state.s2date.slice(0, 4) : '';
+var note = function (m) { return S2STATE[m] === 'loading' ? ' Loading the picture, which can take ten seconds.' : S2STATE[m] === 'fail' ? ' The picture for this day could not be loaded.' : ''; };
+if (state.base === 's2' && state.s2date) c.push('<span>Sentinel-2 photo taken ' + when + (day ? ', about ' + day.cloud + '% cloud across the wider area' : '') + '. Each dot is about 23 m.' + note('true') + '</span>');
+if (state.s2algae && state.s2date) c.push('<span class="key">Algae index, ' + when + ': less ' + S2RAMP.map(function (x) { return '<span class="sw" style="background:' + x + '"></span>'; }).join('') + ' more</span><span class="key"><span class="sw" style="background:#dbdbdb;border:1px solid #9aa3a8"></span>Cloud</span><span>An index from the colour of the water, not a measurement, and not yet checked against water samples. Thick surface scum can be missed.' + note('algae') + '</span>');
+}
 /* ---------- layer controls and map caption ---------- */
 function chip(attr, val, label, pressed, disabled) {
 return '<button type="button" class="chip" id="chip_' + attr + '_' + val + '" data-' + attr + '="' + val + '" aria-pressed="' + !!pressed + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
@@ -846,16 +896,18 @@ return '<button type="button" class="chip" id="chip_' + attr + '_' + val + '" da
 function layersHtml() {
 var O = state.on, missing = { basins: !LAYERS.basins, farms: !LAYERS.farms, algae: !LAYERS.algae, buoys: !LAYERS.buoys, works: !LAYERS.works, fields: !fieldsLayer, incidents: !LAYERS.incidents, status: !LAYERS.status, sources: !LAYERS.sources, srp: !LAYERS.srp, overflows: !LAYERS.overflows };
 return '<div class="lrow"><span class="llab">View</span>' +
-[['map', 'Map'], ['sat', 'Satellite'], ['daily', 'Daily photo']].map(function (g) { return chip('base', g[0], g[1], state.base === g[0]); }).join('') +
-(state.base === 'daily' ? '<input type="date" id="satDate" aria-label="Date of the daily photo" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '">' : '') + '</div>' +
+[['map', 'Map'], ['aerial', 'Sharp aerial'], ['s2', 'Satellite by date'], ['sat', 'Satellite 2024'], ['daily', 'Daily photo']].map(function (g) { return chip('base', g[0], g[1], state.base === g[0]); }).join('') +
+(state.base === 'daily' ? '<input type="date" id="satDate" aria-label="Date of the daily photo" min="2000-03-01" max="' + YESTERDAY + '" value="' + state.satDate + '">' : '') + '</div>' + s2Row() +
 '<div class="lrow"><span class="llab">Shade by</span>' +
 [['none', 'Nothing'], ['sources', 'Likely sources'], ['cover', 'Land cover'], ['farms', 'Livestock'], ['basins', 'Basins'], ['status', 'Water status'], ['sup', 'Surface geology'], ['bed', 'Bedrock']].map(function (g) { return chip('shade', g[0], g[1], state.shade === g[0], missing[g[0]]); }).join('') + '</div>' +
 '<div class="lrow"><span class="llab">Show</span>' +
-[['zones', 'Bloom risk'], ['algae', 'Confirmed algae'], ['buoys', 'Buoys'], ['rivers', 'River loads'], ['srp', 'River phosphorus tests'], ['works', 'Treatment works'], ['overflows', 'Storm overflows'], ['incidents', 'Pollution incidents'], ['fields', 'Field risk'], ['stake', 'Places at stake']].map(function (g) { return chip('on', g[0], g[1], O[g[0]], missing[g[0]]); }).join('') + '</div>';
+[['zones', 'Bloom risk'], ['s2algae', 'Algae from space'], ['algae', 'Confirmed algae'], ['buoys', 'Buoys'], ['rivers', 'River loads'], ['srp', 'River phosphorus tests'], ['works', 'Treatment works'], ['overflows', 'Storm overflows'], ['incidents', 'Pollution incidents'], ['fields', 'Field risk'], ['stake', 'Places at stake']].map(function (g) { return g[0] === 's2algae' ? chip('s2', 'algae', g[1], state.s2algae) : chip('on', g[0], g[1], O[g[0]], missing[g[0]]); }).join('') + '</div>';
 }
 function captionHtml(s) {
 var O = state.on, sh = state.shade, c = [];
 var sw = function (col, dot) { return '<span class="sw' + (dot ? ' dot' : '') + '" style="background:' + col + '"></span>'; };
+if (state.base === 'aerial') c.push('<span>Sharp aerial photos from Esri. Taken on different dates over several years, so they show the land, not today\'s water.</span>');
+s2Caption(c);
 if (state.base === 'sat') c.push('<span>Satellite: Sentinel-2 cloudless 2024, a cloud-free blend of a year of images. It is not today.</span>');
 if (state.base === 'daily') c.push('<span>Daily photo for ' + fmtDate(state.satDate) + ' ' + state.satDate.slice(0, 4) + ', NASA Terra. Coarse, and cloud often hides the lough.</span>');
 if (sh === 'sup' || sh === 'bed') c.push('<span>' + (sh === 'sup' ? 'Surface geology' : 'Bedrock') + ', 1:250,000. Contains Geological Survey of Northern Ireland materials © Crown Copyright.</span>');
@@ -885,6 +937,7 @@ Array.prototype.forEach.call($('steps').children, function (b, i) {
 if (i === s) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
 });
 var O = state.on, sh = state.shade;
+showLayer(SATS.aerial, state.base === 'aerial'); updateS2();
 showLayer(SATS.sat, state.base === 'sat'); showLayer(SATS.daily, state.base === 'daily');
 showLayer(GEO.sup, sh === 'sup'); showLayer(GEO.bed, sh === 'bed');
 showLayer(LAYERS.basins, sh === 'basins'); showLayer(LAYERS.farms, sh === 'farms'); showLayer(GEO.cover, sh === 'cover');
@@ -961,6 +1014,7 @@ if (t.dataset.hot) { if (t.dataset.hot === 'all') { if (HOTMAP) { HOTMAP.closePo
 if (t.dataset.scn) { state.scn = t.dataset.scn; state.day = 0; if (state.step < 4) state.step = 4; preset(); }
 else if (t.dataset.geo) state.shade = t.dataset.geo === 'off' ? 'none' : t.dataset.geo;
 else if (t.dataset.base) state.base = t.dataset.base;
+else if (t.dataset.s2) state.s2algae = !state.s2algae;
 else if (t.dataset.shade) state.shade = t.dataset.shade;
 else if (t.dataset.on) state.on[t.dataset.on] = !state.on[t.dataset.on];
 else if (t.dataset.land) setLand(t.dataset.land);
@@ -976,6 +1030,8 @@ var id = t.id; render();
 if (id && $(id) && !$(id).disabled) $(id).focus({ preventScroll: true });
 });
 document.addEventListener('change', function (e) {
+if (e.target && e.target.id === 's2year' && /^(20\d\d)?$/.test(e.target.value)) { state.s2year = e.target.value; state.s2date = null; var known = s2Days(); if (Array.isArray(known) && known.length) state.s2date = (known.filter(function (x) { return x.cloud <= 20; })[0] || known[0]).date; render(); if ($('s2year')) $('s2year').focus({ preventScroll: true }); return; }
+if (e.target && e.target.id === 's2date' && /^20\d\d-\d\d-\d\d$/.test(e.target.value)) { state.s2date = e.target.value; render(); if ($('s2date')) $('s2date').focus({ preventScroll: true }); return; }
 if (e.target && e.target.id === 'satDate' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) && e.target.value <= YESTERDAY) {
 state.satDate = e.target.value;
 if (SATS.daily) { SATS.daily.options.date = state.satDate; SATS.daily.redraw(); }
